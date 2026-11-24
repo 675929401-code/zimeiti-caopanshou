@@ -429,10 +429,10 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       // 未上线功能：用户端显示玻璃遮罩，管理员直接进入
       const title = repairMojibake(item.title);
       const lockedFeature = /漫剧|有彩/.test(title) || item.link_value === "/youcai" ? "漫剧创作"
-        : /带货/.test(title) || item.link_value === "/commerce" ? "带货创作"
         : "";
       if (lockedFeature && state.auth.user?.role !== "admin") { setComingSoonFeature(lockedFeature); return; }
-      router.push(item.link_value);
+      if (item.link_value === "/commerce") window.open(item.link_value, "_blank", "noopener");
+      else router.push(item.link_value);
       onNavigate?.();
     } else if (item.link_type === "external") {
       window.open(item.link_value, "_blank");

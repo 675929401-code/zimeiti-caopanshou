@@ -5,8 +5,9 @@ import {COMMERCE_VIDEO_MAX_TOTAL_DURATION} from '../../shared/video-generation-c
 type Reply={ownerId:string;job:FrameExtractionJob|null};
 type Pending={ownerId:string;input:FrameInput};
 const active=(job:FrameExtractionJob|null)=>!!job&&['queued','running'].includes(job.status);
-export function CanvasFrameTools({assetId,contextKey='',remainingSlots=0,appliedTaskIds=[],onFrames,onNotice}:{assetId:string;contextKey?:string;remainingSlots?:number;appliedTaskIds?:string[];onFrames:(frames:ExtractedFrame[],taskId:string)=>void|Promise<void>;onNotice:(s:string)=>void}){
+export function CanvasFrameTools({assetId,contextKey='',remainingSlots=0,appliedTaskIds=[],onFrames,onNotice}:{assetId:string;contextKey?:string;remainingSlots?:number;appliedTaskIds?:string[];onFrames?:(frames:ExtractedFrame[],taskId:string)=>void|Promise<void>;onNotice:(s:string)=>void}){
  const [mode,setMode]=useState<FrameMode>('shot-starts'),[job,setJob]=useState<FrameExtractionJob|null>(null),[pending,setPending]=useState<Pending|null>(null),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[applying,setApplying]=useState(false),[applied,setApplied]=useState(''),[error,setError]=useState('');
+ const [timestamp,setTimestamp]=useState('0');
  const state=useRef({ownerId:'',key:'',generation:0,sending:false,applying:false,autoAttempted:''});
  const validScope=(reply:Reply)=>{if(reply.ownerId!==state.current.ownerId)throw Error('登录账号已变化，请刷新画布后核对原任务');if(reply.job&&(reply.job.sourceAssetId!==assetId||reply.job.input.contextKey!==contextKey))throw Error('原抽帧任务不属于当前视频节点');};
  useEffect(()=>{
@@ -16,7 +17,7 @@ export function CanvasFrameTools({assetId,contextKey='',remainingSlots=0,applied
    if(cancelled||generation!==state.current.generation)return;if(!reply.ownerId)throw Error('无法确认当前抽帧账号');state.current.ownerId=reply.ownerId;state.current.key='ca-frame-request-v1:'+encodeURIComponent(reply.ownerId)+':'+encodeURIComponent(contextKey)+':'+assetId;
    let stored:Pending|null=null;try{const raw=localStorage.getItem(state.current.key);if(raw){const value=JSON.parse(raw) as Pending;const input=frameInput(value.input);if(value.ownerId===reply.ownerId&&input.assetId===assetId&&input.contextKey===contextKey)stored={ownerId:value.ownerId,input};}}catch{onNotice('原抽帧请求记录无法读取，当前只查询服务器已有任务。');}
    if(stored){reply=await api<Reply>('/api/commerce/frame-extraction?requestId='+encodeURIComponent(stored.input.requestId));if(cancelled||generation!==state.current.generation)return;validScope(reply);if(!reply.job)setPending(stored);}
-   validScope(reply);setJob(reply.job);if(reply.job){setMode(reply.job.input.mode);try{if(localStorage.getItem(state.current.key+':applied:'+reply.job.id)==='1')setApplied(reply.job.id);}catch{}}
+   validScope(reply);setJob(reply.job);if(reply.job){setMode(reply.job.input.mode);if(reply.job.input.requestedMs!==undefined)setTimestamp(String(reply.job.input.requestedMs/1000));try{if(localStorage.getItem(state.current.key+':applied:'+reply.job.id)==='1')setApplied(reply.job.id);}catch{}}
    setReady(true);
   }).catch(e=>{if(!cancelled)setError(e.message);});return()=>{cancelled=true;};
  },[assetId,contextKey]);
@@ -27,20 +28,24 @@ export function CanvasFrameTools({assetId,contextKey='',remainingSlots=0,applied
   catch(e){if(generation!==state.current.generation)return;try{const reply=await api<Reply>('/api/commerce/frame-extraction?requestId='+encodeURIComponent(value.input.requestId));validScope(reply);if(reply.job){setJob(reply.job);setPending(null);return;}}catch{}setPending(value);setError((e as Error).message+'。请先核对原请求；重试使用同一个请求号。');}
   finally{state.current.sending=false;if(generation===state.current.generation)setBusy(false);}
  }
- function start(){if(!ready||active(job)||state.current.sending||pending||remainingSlots<1)return;const value:Pending={ownerId:state.current.ownerId,input:{requestId:crypto.randomUUID(),assetId,mode,contextKey,remainingSlots:Math.min(100,remainingSlots)}};try{localStorage.setItem(state.current.key,JSON.stringify(value));}catch{onNotice('浏览器无法保留请求号，刷新后将按此视频节点查询服务器记录。');}state.current.autoAttempted='';setPending(value);void send(value);}
+ function start(){if(!ready||active(job)||state.current.sending||pending||remainingSlots<1)return;
+  const requestedMs=Math.round(Number(timestamp)*1000);
+  if(mode==='timestamp'&&(!/^\d+(\.\d{1,3})?$/.test(timestamp)||requestedMs<0||requestedMs>=60000)){setError('请输入 0 至 60 秒以内的截帧时间，最多三位小数');return;}
+  const value:Pending={ownerId:state.current.ownerId,input:{requestId:crypto.randomUUID(),assetId,mode,contextKey,remainingSlots:Math.min(100,remainingSlots),...(mode==='timestamp'?{requestedMs}:{})}};try{localStorage.setItem(state.current.key,JSON.stringify(value));}catch{onNotice('浏览器无法保留请求号，刷新后将按此视频节点查询服务器记录。');}state.current.autoAttempted='';setPending(value);void send(value);}
  async function applyResult(){
-  if(!job||job.status!=='succeeded'||state.current.applying)return;
+  if(!onFrames||!job||job.status!=='succeeded'||state.current.applying)return;
   const target=job,generation=state.current.generation;state.current.applying=true;setApplying(true);setError('');
   try{await onFrames(target.frames,target.id);if(generation!==state.current.generation)return;setApplied(target.id);try{localStorage.setItem(state.current.key+':applied:'+target.id,'1');}catch{}onNotice(`已把 ${target.frames.length} 帧保存到画布。`);}catch(e){if(generation===state.current.generation)setError('图片资产已保留，放入画布未完成：'+(e as Error).message);}finally{state.current.applying=false;if(generation===state.current.generation)setApplying(false);}
  }
  const alreadyApplied=!!job&&(applied===job.id||appliedTaskIds.includes(job.id));
  useEffect(()=>{if(job?.status==='succeeded'&&!alreadyApplied&&state.current.autoAttempted!==job.id){state.current.autoAttempted=job.id;void applyResult();}},[job?.id,job?.status,alreadyApplied]);
  async function checkOriginal(){if(!pending)return;try{const reply=await api<Reply>('/api/commerce/frame-extraction?requestId='+encodeURIComponent(pending.input.requestId));validScope(reply);if(reply.job){setJob(reply.job);setPending(null);setError('');}else setError('服务器尚未收到这个请求。可以使用原请求号重试提交。');}catch(e){setError((e as Error).message);}}
- return <section className="ca-frame-tools"><label>视频抽帧<select aria-label="视频抽帧方式" value={mode} disabled={busy||active(job)||!!pending} onChange={e=>setMode(e.target.value as FrameMode)}><option value="seconds">逐秒抽帧</option><option value="shot-starts">分镜首帧</option><option value="shot-boundaries">分镜首尾帧</option><option value="first">截取首帧</option><option value="last">截取尾帧</option></select></label>
-  <small>视频画面最长 {COMMERCE_VIDEO_MAX_TOTAL_DURATION} 秒 · 当前可用 {remainingSlots} 个图片位置</small>
-  <button disabled={!ready||busy||active(job)||!!pending||remainingSlots<1} onClick={start}>{busy?'正在提交…':active(job)?'正在提取…':'提取到画布'}</button>
+ return <section className="ca-frame-tools"><label>视频抽帧<select aria-label="视频抽帧方式" value={mode} disabled={busy||active(job)||!!pending} onChange={e=>setMode(e.target.value as FrameMode)}>{!onFrames&&<option value="timestamp">指定时间截帧</option>}<option value="seconds">逐秒抽帧</option><option value="shot-starts">分镜首帧</option><option value="shot-boundaries">分镜首尾帧</option><option value="first">截取首帧</option><option value="last">截取尾帧</option></select></label>
+  {mode==='timestamp'&&<label>截帧时间（秒）<input aria-label="截帧时间（秒）" type="number" min="0" max="59.999" step="0.001" value={timestamp} disabled={busy||active(job)||!!pending} onChange={e=>setTimestamp(e.target.value)}/></label>}
+  <small>视频画面最长 {COMMERCE_VIDEO_MAX_TOTAL_DURATION} 秒 · {onFrames?'当前可用 '+remainingSlots+' 个图片位置':'单次最多 '+remainingSlots+' 张图片'}</small>
+  <button disabled={!ready||busy||active(job)||!!pending||remainingSlots<1} onClick={start}>{busy?'正在提交…':active(job)?'正在提取…':onFrames?'提取到画布':'提取并保存'}</button>
   {pending&&<div role="status"><p>已保留原请求号，尚待服务器核对。</p><button disabled={busy} onClick={()=>void checkOriginal()}>核对原抽帧请求</button><button disabled={busy} onClick={()=>void send(pending)}>使用原请求号重试提交</button></div>}
-  {job&&<div role="status"><p>{job.status==='succeeded'?`已提取 ${job.frames.length} 帧`:(job.status==='failed'||job.status==='interrupted')?job.error:`${job.phase==='saving'?'正在保存图片':'正在分析或提取画面'} · 已保存 ${job.frames.length}/${job.plannedCount??'—'} 帧`}</p>{job.status==='succeeded'&&(alreadyApplied?<p>已保存到当前画布</p>:<><p>图片资产已保存。放入画布时会核对实际缺失的节点与可用位置。</p><button disabled={applying} onClick={()=>void applyResult()}>{applying?'正在保存画布…':'将已提取图片放入画布'}</button></>)}{['failed','interrupted'].includes(job.status)&&!!job.frames.length&&<p>已有 {job.frames.length} 张图片保存在资产库，原任务不会重放。</p>}<small>任务 {job.id.slice(0,8)} · 来源 {job.sourceAssetId.slice(0,8)}</small></div>}
+  {job&&<div role="status"><p>{job.status==='succeeded'?`已提取 ${job.frames.length} 帧`:(job.status==='failed'||job.status==='interrupted')?job.error:`${job.phase==='saving'?'正在保存图片':'正在分析或提取画面'} · 已保存 ${job.frames.length}/${job.plannedCount??'—'} 帧`}</p>{job.status==='succeeded'&&!onFrames&&<ul aria-label="抽取图片">{job.frames.map(frame=><li key={frame.assetId}><a href={'/api/commerce/assets/'+frame.assetId+'?download=1'}>下载第 {frame.index} 帧 · {frame.time.toFixed(job.input.mode==='timestamp'?3:2)} 秒</a></li>)}</ul>}{job.status==='succeeded'&&onFrames&&(alreadyApplied?<p>已保存到当前画布</p>:<><p>图片资产已保存。放入画布时会核对实际缺失的节点与可用位置。</p><button disabled={applying} onClick={()=>void applyResult()}>{applying?'正在保存画布…':'将已提取图片放入画布'}</button></>)}{['failed','interrupted'].includes(job.status)&&!!job.frames.length&&<p>已有 {job.frames.length} 张图片保存在资产库，原任务不会重放。</p>}<small>任务 {job.id.slice(0,8)} · 来源 {job.sourceAssetId.slice(0,8)}</small></div>}
   {error&&<p role="alert">{error}</p>}
   {mode.startsWith('shot')&&<small>镜头检测采用本地画面变化分析，复杂运动与渐变可能需要人工核对。</small>}
  </section>;

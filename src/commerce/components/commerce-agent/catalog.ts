@@ -27,19 +27,22 @@ export const IMAGE_SKILLS: CommerceSkill[] = [
 export const DIRECTOR_GROUPS: Record<string, string[]> = {
   '电商带货': ['口播带货', '促销转化', '场景种草', '痛点解决', '功能演示'],
   '同城到店': ['门店发现', '到店实录', '招牌体验', '同城团购'],
-  '品牌广告': ['品牌主张', '品牌故事', '生活方式', '创意概念'],
+  '品牌广告': ['商品展示', '卖点广告', '创意广告', '创意概念'],
   '剧情短片': ['对话短剧', '反转短剧', '悬念短剧', '情绪短片', '产品植入'],
 };
 export const VIDEO_SLOTS: MaterialSlot[] = [slot('reference', '添加参考图片/视频', 0, 12, ['image', 'video']), slot('sound', '添加声音', 0, 3, ['audio'])];
 export const SCENARIOS = [
-  { id: 'replicate', name: '深度复刻', description: '参考原片动作与镜头，替换人物或商品', image: '/commerce/replicate.jpg', prompt: '根据参考视频的动作与镜头，使用我的商品或人物素材制作新视频。', stages: ['选择参考视频', '添加商品或人物，可选背景和声音', '补充说明，核对时长与画幅', '确认费用并生成', '查看成片或继续剪辑'] },
-  { id: 'detail', name: '商详套图', description: '一组参考，制作商品详情套图', image: '/commerce/detail.jpg', prompt: '请根据商品参考，制作一套商品详情图，包含主视觉、核心卖点、细节、使用场景和规格。', stages: ['上传商品参考', '核对商品信息', '确认分屏结构', '逐屏生成', '检查与导出'] },
-  { id: 'ecommerce', name: '电商带货', description: '制作商品展示与带货视频', image: '/commerce/ecommerce.jpg', prompt: '我要为商品制作一条带货视频，请先整理受众、卖点和脚本，再规划画面与口播。', stages: ['整理商品信息', '选择编导风格', '确认脚本', '生成画面与视频', '配音与导出'] },
-  { id: 'local', name: '同城到店', description: '策划门店探访与团购内容', image: '/commerce/local.jpg', prompt: '请为我的门店策划同城到店视频，突出真实环境、招牌体验和到店理由。', stages: ['上传门店素材', '整理到店信息', '确认脚本', '制作镜头', '检查与导出'] },
-  { id: 'brand', name: '品牌广告', description: '围绕品牌表达创意与故事', image: '/commerce/brand.jpg', prompt: '请制作一条品牌广告，先明确品牌主张、受众和视觉基调，再给出创意与镜头方案。', stages: ['填写品牌信息', '确认创意方向', '规划镜头', '生成素材', '检查与导出'] },
-  { id: 'drama', name: '剧情短片', description: '用角色、故事和镜头表达创意', image: '/commerce/drama.jpg', prompt: '我要制作一段剧情短片，请先明确人物、情节和产品出现的方式，再规划镜头。', stages: ['确定人物与故事', '确认脚本', '规划镜头', '生成素材', '剪辑与导出'] },
+  { id: 'replicate', name: '爆款裂变', description: '参考爆款视频，轻松裂变成多款爆款', image: '/commerce/replicate.jpg', prompt: '根据参考视频的动作与镜头，使用我的商品或人物素材制作新视频。', stages: ['选择参考视频', '添加商品或人物，可选背景和声音', '补充说明，核对时长与画幅', '确认费用并生成', '查看成片或继续剪辑'] },
+  { id: 'detail', name: '商详套图', description: '一键生成专业商品详情套图', image: '/commerce/detail.jpg', prompt: '请根据商品参考，制作一套商品详情图，包含主视觉、核心卖点、细节、使用场景和规格。', stages: ['上传商品参考', '核对商品信息', '确认分屏结构', '逐屏生成', '检查与导出'] },
+  { id: 'ecommerce', name: '电商带货', description: '快速生成商品展示与带货视频', image: '/commerce/ecommerce.jpg', prompt: '我要为商品制作一条带货视频，请先整理受众、卖点和脚本，再规划画面与口播。', stages: ['整理商品信息', '选择编导风格', '确认脚本', '生成画面与视频', '配音与导出'] },
+  { id: 'local', name: '同城到店', description: '轻松制作本地探店推广视频', image: '/commerce/local.jpg', prompt: '请为我的门店策划同城到店视频，突出真实环境、招牌体验和到店理由。', stages: ['上传门店素材', '整理到店信息', '确认脚本', '制作镜头', '检查与导出'] },
+  { id: 'brand', name: '品牌广告', description: '打造视听统一的品牌广告', image: '/commerce/brand.jpg', prompt: '请制作一条品牌广告，先明确品牌主张、受众和视觉基调，再给出创意与镜头方案。', stages: ['填写品牌信息', '确认创意方向', '规划镜头', '生成素材', '检查与导出'] },
+  { id: 'drama', name: '剧情短片', description: '快速创作情节紧凑的剧情短片', image: '/commerce/drama.jpg', prompt: '我要制作一段剧情短片，请先明确人物、情节和产品出现的方式，再规划镜头。', stages: ['确定人物与故事', '确认脚本', '规划镜头', '生成素材', '剪辑与导出'] },
+  { id: 'image-create', name: '图片创作', description: '轻松完成图片创作与修改', image: '/commerce/reference/3fadbb70e959fef1.jpg', prompt: '', stages: ['上传参考图片', '描述画面', '选择模型与比例', '生成图片', '修改与导出'] },
 
 ];
 export const DETAIL_PANELS = ['商品主视觉', '核心卖点', '材质与细节', '使用场景', '规格与说明', '购买理由'];
-export const TOOL_ITEMS = ['画布', '剪辑台', '画质增强', '水印擦除', '字幕擦除', '人脸打码', '图片精修', '数字人视频', '爆款视频二创', '语音合成'] as const;
+export const HOME_QUICK_TOOLS: ReadonlyArray<{ name: string; tool?: number; action?: 'roles' }> = [
+  { name: '画布', tool: 0 }, { name: '剪辑台', tool: 1 }, { name: '画质增强', tool: 2 }, { name: '水印擦除', tool: 3 }, { name: '字幕擦除', tool: 4 }, { name: 'AI 角色', action: 'roles' },
+];
 export const COMMERCE_DRAFT_VERSION = 1;

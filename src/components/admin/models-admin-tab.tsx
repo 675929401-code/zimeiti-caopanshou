@@ -37,6 +37,8 @@ interface ModelsAdminTabProps {
   settingsSaving: boolean;
   updateSetting: (key: ModelSettingKey, value: string) => void;
   saveModelSettings: () => void;
+  onUnlock: () => void;
+  onConfigureWorkspace?: () => void;
   onModelsChange: () => void | Promise<void>;
 }
 
@@ -53,11 +55,22 @@ export function ModelsAdminTab({
   updateSetting,
   saveModelSettings,
   onModelsChange,
+  onUnlock,
+  onConfigureWorkspace,
 }: ModelsAdminTabProps) {
   const canManageModels = canManageModelsPermission && sensitiveUnlocked;
 
   return (
     <div className="space-y-6" data-testid="authorized-models-admin-tab">
+      {(onConfigureWorkspace || (canManageModelsPermission && !sensitiveUnlocked)) && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm">
+          {canManageModelsPermission && !sensitiveUnlocked && <>
+            <span>完成安全验证后可添加模型、修改价格和管理凭据。</span>
+            <button type="button" className="font-semibold text-[var(--primary)]" onClick={onUnlock}>验证管理身份</button>
+          </>}
+          {onConfigureWorkspace && <button type="button" className="ml-auto font-semibold text-[var(--primary)]" onClick={onConfigureWorkspace}>配置各页面的模型与顺序 →</button>}
+        </div>
+      )}
       {canManageModelsPermission ? (
         <UnifiedModelsTab
           token={token}
@@ -70,7 +83,7 @@ export function ModelsAdminTab({
         <UnifiedModelsReadOnlyAdminTab token={token} />
       )}
 
-      {canManageModelsPermission && (
+      {canManageModels && (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
           <h3 className="font-semibold text-[var(--foreground)] mb-1">封面工作流连接</h3>
           <p className="text-xs text-[var(--muted-foreground)] mb-3">配置封面制作页面调用的 Coze Coding 工作流，工作流内置模型和风格。</p>

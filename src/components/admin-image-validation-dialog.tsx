@@ -226,7 +226,7 @@ function ImageValidationContent({ modelId, modelName, token, userId, onClose, on
         publicationHeaders={...headers(),"x-image-publication-request":encodeURIComponent(JSON.stringify(publication))};
       }
       const response = await fetch("/api/admin/cover-models/validation/publish", { method: "POST", headers:publicationHeaders,
-        body, redirect: "error", signal: AbortSignal.timeout(60000) });
+        body, redirect: "error", signal: AbortSignal.timeout(240000) });
       const data = await response.json();
       if (!response.ok || data.success !== true || data.modelId !== modelId || data.imageRecordId !== attempt.imageRecordId || typeof data.assetId!=="string" || (!attempt.deliveryReceipt && data.assetId !== attempt.assetId)) throw new Error(imageValidationSafeError(data.error, "启用结果暂未确认，请检查原记录"));
       store({ ...attempt,assetId:data.assetId, status: "published", error: "", errorCode: "" }); if (mounted.current) onPublished();

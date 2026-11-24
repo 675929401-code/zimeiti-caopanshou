@@ -21,6 +21,17 @@ function headers(values: Record<string, string>): Headers {
 assert.equal(normalizeRateLimitPath("POST", "/api/image/generate"), "/api/image/generate");
 assert.equal(normalizeRateLimitPath("POST", "/api/video/tasks/one"), "/api/video");
 assert.equal(normalizeRateLimitPath("DELETE", "/api/admin/users/user-a"), "/api/admin");
+const assetRoutes = ["/api/commerce/assets/00000000-0000-4000-8000-000000000001", "/api/commerce/assets/00000000-0000-4000-8000-000000000002"];
+for (const route of assetRoutes) {
+  assert.equal(normalizeRateLimitPath("GET", route), "/api/commerce/assets/:id");
+  assert.equal(normalizeRateLimitPath("PATCH", route), "/api/commerce");
+}
+for (let index = 0; index < 240; index += 1) {
+  assert.equal(checkRateLimit("asset-budget-check", "GET", assetRoutes[index % 2]).allowed, true);
+}
+assert.equal(checkRateLimit("asset-budget-check", "GET", assetRoutes[0]).allowed, false);
+assert.equal(checkRateLimit("asset-budget-check", "GET", "/api/commerce/assets").allowed, true);
+assert.equal(checkRateLimit("asset-budget-check", "GET", "/api/commerce/jobs").allowed, true);
 
 const rotatingPathIp = "198.51.100.240";
 for (let index = 0; index < 60; index += 1) {

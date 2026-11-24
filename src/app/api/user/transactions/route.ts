@@ -1,3 +1,4 @@
+import { classifyWalletEntry, readWalletTotals } from "@/lib/member-wallet-history";
 import { NextRequest, NextResponse } from 'next/server';
 import { getTokenFromHeaders, verifyToken } from '@/lib/auth';
 import { getSupabaseAdminClient } from '@/storage/database/supabase-client';
@@ -18,15 +19,34 @@ export async function GET(request: NextRequest) {
     const userId = payload.userId;
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'all'; // all | credits | cash
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '20'), 50);
+    const page = Number(searchParams.get('page') || '1');
+    const pageSize = Number(searchParams.get('pageSize') || '20');
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50 || !Number.isSafeInteger(page * pageSize)) {
+      return NextResponse.json({ error: '分页参数无效' }, {status: 400});
+    }
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
     const transactionType = searchParams.get('transactionType') || 'all'; // all | recharge | consume
 
+    if (!['all', 'cash', 'credits'].includes(type) || !['all', 'recharge', 'consume'].includes(transactionType)) {
+      return NextResponse.json({ error: '交易筛选条件无效' }, {status: 400});
+    }
     const client = getSupabaseAdminClient();
     const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const end = from + pageSize;
+    const readPrefix = async (query: any) => {
+      const data: any[] = [];
+      let count = 0;
+      while (data.length < end) {
+        const start = data.length;
+        const result = await query.range(start, Math.min(start + 499, end - 1));
+        if (result.error || !Array.isArray(result.data) || !Number.isInteger(result.count)) throw new Error('WALLET_HISTORY_READ_FAILED');
+        count = result.count;
+        data.push(...result.data);
+        if (data.length >= count || !result.data.length) break;
+      }
+      return { data, count };
+    };
 
     const buildDateFilter = (query: any) => {
       if (dateFrom) query = query.gte('created_at', dateFrom);
@@ -43,21 +63,18 @@ export async function GET(request: NextRequest) {
         .from('credit_transactions')
         .select('id, type, transaction_type, amount, balance_after, description, metadata, created_at', { count: 'exact' })
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }).order('id', { ascending: false });
 
       if (transactionType === 'recharge') {
-        creditQuery = creditQuery.in('type', ['recharge', 'admin_adjust']);
+        creditQuery = creditQuery.in('type', ['recharge', 'topup']);
       } else if (transactionType === 'consume') {
-        creditQuery = creditQuery.in('type', ['consume', 'consumption']);
+        creditQuery = creditQuery.in('type', ['consume', 'consumption', 'deduction']);
       }
 
       creditQuery = buildDateFilter(creditQuery);
 
-      const { data: cData, error: cError, count: cTotal } = await creditQuery.range(from, to);
-
-      if (cError) {
-        console.error('查询积分记录失败:', cError);
-      } else {
+      const { data: cData, count: cTotal } = await readPrefix(creditQuery);
+      {
         creditTransactions = (cData || []).map((t: any) => ({
           id: t.id,
           category: 'credits' as const,
@@ -67,7 +84,7 @@ export async function GET(request: NextRequest) {
           balanceAfter: t.balance_after != null ? Number(t.balance_after) : null,
           description: t.description || '',
           metadata: toPublicTransactionMetadata(t.metadata),
-          ...(['consume', 'consumption'].includes(t.type) ? {
+          ...(classifyWalletEntry(t.type) === 'spend' ? {
             billingExplanation: buildPublicTransactionBillingExplanation(t.metadata, 'credits'),
           } : {}),
           createdAt: t.created_at,
@@ -76,7 +93,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // === 现金交易记录（排除视频扣费，视频扣费由 video_tasks 单独展示，避免重复） ===
+    // 现金流水展示实际钱包变动。
     let cashTransactions: any[] = [];
     let cashTotal = 0;
 
@@ -85,35 +102,29 @@ export async function GET(request: NextRequest) {
         .from('cash_transactions')
         .select('id, type, amount, balance_after, description, reference_id, metadata, created_at', { count: 'exact' })
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      // 排除视频扣费记录（reference_id 以 "video:" 开头），由 video_tasks 单独展示更完整的信息
-      cashQuery = cashQuery.not('reference_id', 'like', 'video:%');
+        .order('created_at', { ascending: false }).order('id', { ascending: false });
 
       if (transactionType === 'recharge') {
-        cashQuery = cashQuery.eq('type', 'topup');
+        cashQuery = cashQuery.in('type', ['topup','recharge']);
       } else if (transactionType === 'consume') {
-        cashQuery = cashQuery.eq('type', 'consume');
+        cashQuery = cashQuery.in('type', ['consume', 'consumption', 'deduction']);
       }
 
       cashQuery = buildDateFilter(cashQuery);
 
-      const { data: chData, error: chError, count: chTotal } = await cashQuery.range(from, to);
-
-      if (chError) {
-        console.error('查询现金记录失败:', chError);
-      } else {
+      const { data: chData, count: chTotal } = await readPrefix(cashQuery);
+      {
         cashTransactions = (chData || []).map((t: any) => ({
           id: t.id,
           category: 'cash' as const,
           type: t.type,
-          transactionType: t.type === 'topup' ? 'recharge' : 'consumption',
+          transactionType: classifyWalletEntry(t.type),
           amount: Number(t.amount),
           balanceAfter: t.balance_after != null ? Number(t.balance_after) : null,
           description: t.description || '',
           referenceId: t.reference_id || null,
           metadata: toPublicTransactionMetadata(t.metadata),
-          ...(t.type === 'consume' ? {
+          ...(classifyWalletEntry(t.type) === 'spend' ? {
             billingExplanation: buildPublicTransactionBillingExplanation(t.metadata, 'cash'),
           } : {}),
           createdAt: t.created_at,
@@ -122,29 +133,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Video task documents describe delivery; expenses are counted only in the wallet.
     // === 视频任务记录 ===
     let videoTasks: any[] = [];
     let videoTotal = 0;
 
-    if (type === 'all' || type === 'cash') {
+    if ((type === 'all' || type === 'cash') && transactionType === 'all') {
       let videoQuery = client
         .from('video_tasks')
         .select('id, model_id, status, price_charged, created_at, completed_at, aspect_ratio, duration_seconds, prompt, error_message', { count: 'exact' })
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }).order('id', { ascending: false });
 
-      if (transactionType === 'consume') {
-        videoQuery = videoQuery.eq('status', 'completed');
-      } else if (transactionType === 'recharge') {
-        // 视频没有充值，跳过
-        videoQuery = videoQuery.eq('id', 'never-match');
-      }
 
       videoQuery = buildDateFilter(videoQuery);
 
-      const { data: vData, error: vError, count: vTotal } = await videoQuery.range(from, to);
+      const { data: vData, count: vTotal } = await readPrefix(videoQuery);
 
-      if (!vError && vData) {
+      if (vData) {
         // 批量查询关联的视频模型名称
         const modelIds = [...new Set(vData.map((v: any) => v.model_id).filter(Boolean))];
         const modelMap: Record<string, string> = {};
@@ -185,15 +191,12 @@ export async function GET(request: NextRequest) {
         .from('payment_orders')
         .select('id, type, amount, status, payment_method, credits_amount, trade_order_id, paid_at, created_at', { count: 'exact' })
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }).order('id', { ascending: false });
 
       paymentQuery = buildDateFilter(paymentQuery);
 
-      const { data: pData, error: pError, count: pTotal } = await paymentQuery.range(from, to);
-
-      if (pError) {
-        throw new Error('PAYMENT_ORDER_HISTORY_READ_FAILED');
-      }
+      if (type === 'credits' || type === 'cash') paymentQuery = paymentQuery.eq('type', type);
+      const { data: pData, count: pTotal } = await readPrefix(paymentQuery);
 
       if (pData) {
         paymentOrders = pData.map((o: any) => ({
@@ -220,58 +223,32 @@ export async function GET(request: NextRequest) {
       ...cashTransactions,
       ...videoTasks,
       ...paymentOrders,
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(from, end);
 
     // === 总计统计 ===
-    const { data: creditSummary } = await client
-      .from('credit_transactions')
-      .select('amount, type')
-      .eq('user_id', userId);
-
-    const { data: cashSummary } = await client
-      .from('cash_transactions')
-      .select('amount, type')
-      .eq('user_id', userId);
-
-    let totalCreditsRecharged = 0;
-    let totalCreditsConsumed = 0;
-    let totalCashRecharged = 0;
-    let totalCashConsumed = 0;
-
-    (creditSummary || []).forEach((t: any) => {
-      const amt = Number(t.amount);
-      if (t.type === 'recharge' || t.type === 'admin_adjust') {
-        if (amt > 0) totalCreditsRecharged += amt;
-        else totalCreditsConsumed += Math.abs(amt);
-      } else {
-        totalCreditsConsumed += Math.abs(amt);
-      }
-    });
-
-    (cashSummary || []).forEach((t: any) => {
-      const amt = Number(t.amount);
-      if (t.type === 'topup') totalCashRecharged += amt;
-      else totalCashConsumed += Math.abs(amt);
-    });
-
+    const [creditTotals,cashTotals] = await Promise.all([
+      readWalletTotals(client,userId,"credit_transactions"),
+      readWalletTotals(client,userId,"cash_transactions"),
+    ]);
     // 查询当前余额
-    const { data: userData } = await client
+    const { data: userData, error: balanceError } = await client
       .from('users')
-      .select('credits, cash_balance')
+      .select('credits, credits_reserved, cash_balance')
       .eq('id', userId)
       .single();
 
+    if (balanceError || !userData) throw new Error("WALLET_BALANCE_UNAVAILABLE");
     return NextResponse.json({
       success: true,
       data: {
         transactions: allTransactions,
         summary: {
-          totalCreditsRecharged,
-          totalCreditsConsumed,
-          creditBalance: userData ? Number(userData.credits) : 0,
-          totalCashRecharged,
-          totalCashConsumed,
-          cashBalance: userData ? Number(userData.cash_balance || 0) : 0,
+          totalCreditsRecharged: creditTotals.recharged,
+          totalCreditsConsumed: creditTotals.consumed,
+          creditBalance: Math.max(0, Number(userData.credits) - Number(userData.credits_reserved || 0)),
+          totalCashRecharged: cashTotals.recharged,
+          totalCashConsumed: cashTotals.consumed,
+          cashBalance: Number(userData.cash_balance || 0),
         },
         pagination: {
           page,

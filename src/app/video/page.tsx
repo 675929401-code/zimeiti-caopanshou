@@ -45,7 +45,6 @@ import {
   getVideoBillingUnit,
   readVideoTokenPublicPricing,
   resolveVideoTokenBillingConsent,
-  videoTokenRateLabel,
   getVideoResolutionCapabilities,
   getVideoTargetDurationOptions,
   resolveVideoCharge,
@@ -3903,7 +3902,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         <Button data-workbench-action="secondary" variant="outline" size="sm" onClick={() => setModelsReadAttempt((attempt) => attempt + 1)}>重新读取模型</Button>
                       </div>
                     ) : models.map((model) => {
-                      const modelPrice = model.generationReady === false ? model.pricePerUse : resolveVideoResolution(model, model.defaultResolution).publicPrice;
+
                       const selected = model.id === selectedModelId;
                       const selectable = model.available && model.generationReady;
                       const inputLabel = videoModelInputLabel(model);
@@ -3935,9 +3934,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 </span>
                               )}
                             </span>
-                            <span data-video-model-price className="col-start-2 min-w-0 max-w-full justify-self-start whitespace-normal break-words rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold leading-4 text-[var(--foreground)] [overflow-wrap:anywhere]">
-                              {getVideoBillingUnit(model) === "token" ? model.generationReady === false ? "Token 计价" : videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "—" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
-                            </span>
                           </span>
                         </button>
                       );
@@ -3963,7 +3959,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   </div>
                   {selectedModel && !selectedModelSubmissionUnavailable && (
                     <div className="text-xs text-[var(--text-secondary)]">
-                      {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, selectedResolution) : <>单条预计：<span className="text-yellow-500 font-bold">¥{selectedPrice.toFixed(2)}</span></>}
                       {getVideoBillingUnit(selectedModel) !== "token" && cashBalance < selectedPrice && (
                         <span className="ml-2 text-red-500 font-medium">余额不足</span>
                       )}
@@ -3976,7 +3971,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     value={tokenChargeConsent?.modelId === selectedModel.id && tokenChargeConsent.priceVersion === selectedModel.tokenPricing?.priceVersion ? tokenChargeConsent.amount : ""}
                     onChange={event => setTokenChargeConsent({ modelId: selectedModel.id, priceVersion: selectedModel.tokenPricing?.priceVersion || "", amount: event.target.value })} />
                   <p className="mt-1 text-[var(--muted-foreground)]">按实际 Token 用量结算；预留不是扣费，超额待确认。每次点击生成均使用当前额度。</p>
-                  {selectedInputCapabilities.supportsSourceVideoInput && <p className="mt-1 text-[var(--muted-foreground)]">使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, true)}；未使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, false)}</p>}
+
                 </div>}
                 {selectedModelSubmissionUnavailable ? null : <div className="flex flex-wrap items-start gap-4">
                   {/* Aspect ratio */}
@@ -4040,7 +4035,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           >
                             {resolutionCapabilities.options.map((value) => (
                               <SelectItem key={value} value={value}>
-                                {resolutionCapabilities.labels[value] || value} · {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, value) : `¥${resolveVideoResolution(selectedModel, value).publicPrice.toFixed(2)}${getVideoBillingUnit(selectedModel) === "output_second" ? "/秒" : ""}`}
+                                {resolutionCapabilities.labels[value] || value}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -4326,7 +4321,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
                     <div className="p-4 space-y-3.5">
                       {cardCapabilitiesUnverified ? null : <fieldset disabled={requiresVideoTaskTracking(task)} className="min-w-0 space-y-3.5">
-                      {cardModel && getVideoBillingUnit(cardModel) === "token" && <p className="text-xs text-[var(--muted-foreground)]">本条费率：{videoTokenRateLabel(cardModel, selectedResolution, Boolean(cardInputCapabilities.supportsSourceVideoInput && task.sourceVideoUrl))}</p>}
+
                       {/* Prompt */}
                       <div>
                         <label className="text-xs text-[var(--text-secondary)] mb-1.5 block font-medium">

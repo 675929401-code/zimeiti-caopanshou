@@ -1,4 +1,14 @@
 import sharp from 'sharp';
+import { TOAPIS_STANDARD_IMAGE_CONTRACT, toApisStandardNativeSize } from '../../lib/toapis-image-contract';
+
+type DeliveryModel = { modelName?: string; provider?: string };
+function deliveryDimensions(aspectRatio: unknown, resolution: unknown, model?: DeliveryModel) {
+  if (model?.provider === 'toapis_images' && model.modelName === 'gpt-image-2.6-sunburst') {
+    const nativeSize = toApisStandardNativeSize(TOAPIS_STANDARD_IMAGE_CONTRACT, resolution, aspectRatio);
+    if (nativeSize) return nativeSize;
+  }
+  return imageTargetDimensions(aspectRatio, resolution);
+}
 import { normalizeImageFormat, type ImageOutputFormat } from '../image-input-contract';
 
 export type GeneratedImageOutput = {
@@ -28,8 +38,8 @@ export function imageTargetDimensions(aspectRatio: unknown, resolution: unknown)
 function mimeFor(format: ImageOutputFormat) { return `image/${format === 'JPEG' ? 'jpeg' : format.toLowerCase()}`; }
 function sharpFormat(format: ImageOutputFormat) { return format === 'JPEG' ? 'jpeg' : format.toLowerCase() as 'png' | 'webp'; }
 
-export async function inspectGeneratedImageOutput(bytes: Buffer, type: string, aspectRatio: unknown, resolution: unknown, format?: unknown) {
-  const target = imageTargetDimensions(aspectRatio, resolution), metadata = await sharp(bytes).metadata();
+export async function inspectGeneratedImageOutput(bytes: Buffer, type: string, aspectRatio: unknown, resolution: unknown, format?: unknown, model?: DeliveryModel) {
+  const target = deliveryDimensions(aspectRatio, resolution, model), metadata = await sharp(bytes).metadata();
   const width = Number(metadata.width || 0), height = Number(metadata.height || 0), expectedFormat = normalizeImageFormat(format);
   if (!width || !height) throw Error('图片结果无法读取像素尺寸');
   const issues: string[] = [];
@@ -38,8 +48,8 @@ export async function inspectGeneratedImageOutput(bytes: Buffer, type: string, a
   return { width, height, targetWidth: target.width, targetHeight: target.height, type, expectedType: expectedFormat ? mimeFor(expectedFormat) : type, issues };
 }
 
-export async function normalizeGeneratedImageOutput(downloaded: { bytes: Buffer; type: string }, aspectRatio: unknown, resolution: unknown, format?: unknown): Promise<GeneratedImageOutput> {
-  const target = imageTargetDimensions(aspectRatio, resolution), metadata = await sharp(downloaded.bytes).metadata();
+export async function normalizeGeneratedImageOutput(downloaded: { bytes: Buffer; type: string }, aspectRatio: unknown, resolution: unknown, format?: unknown, model?: DeliveryModel): Promise<GeneratedImageOutput> {
+  const target = deliveryDimensions(aspectRatio, resolution, model), metadata = await sharp(downloaded.bytes).metadata();
   const sourceWidth = Number(metadata.width || 0), sourceHeight = Number(metadata.height || 0);
   if (!sourceWidth || !sourceHeight) throw Error('模型返回的图片无法读取像素尺寸');
   const expectedRatio = target.width / target.height, actualRatio = sourceWidth / sourceHeight;
@@ -49,7 +59,7 @@ export async function normalizeGeneratedImageOutput(downloaded: { bytes: Buffer;
   const outputType = mimeFor(outputFormat), needsResize = sourceWidth !== target.width || sourceHeight !== target.height, needsFormat = downloaded.type !== outputType;
   let bytes = downloaded.bytes;
   if (needsResize || needsFormat) bytes = await sharp(downloaded.bytes).resize(target.width, target.height, { fit: 'fill' }).toFormat(sharpFormat(outputFormat)).toBuffer();
-  const final = await inspectGeneratedImageOutput(bytes, outputType, aspectRatio, resolution, outputFormat);
+  const final = await inspectGeneratedImageOutput(bytes, outputType, aspectRatio, resolution, outputFormat, model);
   if (final.issues.length) throw Error(`图片结果规格归一化失败：${final.issues.join('；')}`);
   return { bytes, type: outputType, width: final.width, height: final.height, sourceWidth, sourceHeight, normalized: needsResize || needsFormat };
 }

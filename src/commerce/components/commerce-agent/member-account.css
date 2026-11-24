@@ -1,0 +1,107 @@
+/* 带货创作·我的账户：浅色简洁风（2026-11-23 二版）。
+ * 标题与页签同行；余额为白色宽卡；行业标准的克制信息密度。 */
+.ca-account{min-height:100vh;background:#f6f7f9;color:#26292f;padding:0 22px 64px;font-size:13px;font-variant-numeric:tabular-nums}
+.ca-account-header{display:flex;align-items:center;gap:18px;max-width:920px;margin:0 auto;padding:14px 0}
+.ca-account-back{display:flex;align-items:center;gap:6px;color:#6b7280;text-decoration:none;font-size:12px;transition:color .15s}
+.ca-account-back:hover{color:#26292f}
+.ca-account-brand{display:flex;align-items:center;gap:8px;color:#26292f;text-decoration:none;font-size:15px;margin:0 auto}
+.ca-account-brand strong{font-weight:600}
+.ca-account-mainsite{display:flex;align-items:center;gap:4px;color:#6b7280;text-decoration:none;font-size:12px;transition:color .15s}
+.ca-account-mainsite:hover{color:#26292f}
+
+/* 标题行：标题在左、页签在右，与内容列对齐 */
+.ca-account-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;max-width:920px;margin:6px auto 16px}
+.ca-account-title h1{margin:0;font-size:22px;font-weight:700;letter-spacing:.01em;color:#1d2026}
+.ca-account-title p{margin:6px 0 0;font-size:12px;color:#8a919e}
+
+/* 分段控件式页签 */
+.ca-account-tabs{display:inline-flex;flex-shrink:0;gap:2px;padding:3px;background:#e9ebef;border-radius:999px}
+.ca-account-tabs button{border:0;background:transparent;border-radius:999px;padding:6px 20px;font-size:12.5px;color:#5c626b;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s}
+.ca-account-tabs button.active{background:#fff;color:#1d2026;font-weight:600;box-shadow:0 1px 4px #1c25320f}
+
+/* 通用白卡 */
+.ca-account-card{max-width:920px;margin:0 auto 12px;background:#fff;border:1px solid #ededf0;border-radius:16px;padding:18px 26px;box-shadow:0 1px 2px #1c253206,0 8px 24px #1c253205}
+.ca-account-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.ca-account-card-head h2{margin:0;font-size:14.5px;font-weight:600;color:#1d2026}
+
+/* 未登录态 */
+.ca-account-anonymous{text-align:center;padding:52px 24px;color:#6b7280}
+.ca-account-anonymous h1{font-size:16px;color:#26292f;margin:14px 0 6px}
+.ca-account-anonymous p{margin:0 0 20px;font-size:12px}
+
+/* 资料卡（紧凑横条） */
+.ca-account-profile{display:flex;align-items:center;gap:14px;padding:14px 26px}
+.ca-account-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px #fff,0 0 0 4px #eceef3}
+.ca-account-avatar-fallback{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#2b303b,#1d2026);color:#fff;font-size:17px}
+.ca-account-identity{flex:1;min-width:0}
+.ca-account-identity h1{display:flex;align-items:center;gap:8px;font-size:15px;margin:0 0 3px;color:#1d2026;font-weight:600}
+.ca-account-identity p{margin:0;font-size:11.5px;color:#8a919e}
+.ca-role-badge{font-style:normal;font-size:10px;font-weight:500;line-height:1;padding:3px 8px;border-radius:999px;background:#f0f2f5;color:#6b7280}
+.ca-role-badge.admin{background:#22252a;color:#fff}
+.ca-account-quiet{display:inline-flex;align-items:center;gap:4px;color:#6b7280;text-decoration:none;font-size:12px;white-space:nowrap;background:none;border:0;cursor:pointer;padding:0;transition:color .15s}
+.ca-account-quiet:hover{color:#1d2026}
+
+/* 余额卡：白色宽卡，左现金右积分 */
+.ca-account-hero{display:flex;align-items:center;gap:24px;max-width:920px;margin:0 auto 12px;padding:20px 26px;border-radius:16px;background:#fff;border:1px solid #ededf0;box-shadow:0 1px 2px #1c253206,0 8px 24px #1c253205}
+.ca-account-hero-main{flex:1;min-width:0}
+.ca-account-hero-label{display:block;font-size:11px;letter-spacing:.1em;color:#9aa1ac;margin-bottom:6px}
+.ca-account-hero-amount{display:block;font-size:30px;font-weight:700;letter-spacing:.01em;line-height:1.2;color:#1d2026;font-variant-numeric:tabular-nums}
+.ca-account-hero-note{margin:8px 0 0;font-size:11px;line-height:1.7;color:#9aa1ac;max-width:460px}
+.ca-account-hero-side{flex-shrink:0;min-width:150px;padding:14px 18px;border-radius:12px;background:#f8f9fb;border:1px solid #eef0f3}
+.ca-account-hero-side span{display:block;font-size:11px;letter-spacing:.08em;color:#9aa1ac;margin-bottom:6px}
+.ca-account-hero-side strong{display:block;font-size:20px;font-weight:600;color:#1d2026;font-variant-numeric:tabular-nums}
+.ca-account-hero-side small{display:block;margin-top:6px;font-size:10px;color:#a6acb6}
+
+/* 按钮 */
+.ca-account-actions{display:flex;gap:10px;margin-top:16px}
+.ca-account-primary{display:inline-flex;align-items:center;gap:6px;background:#22252a;color:#fff;border:0;border-radius:10px;padding:8px 18px;font-size:12.5px;font-weight:500;text-decoration:none;cursor:pointer;transition:background .15s,transform .1s}
+.ca-account-primary:hover{background:#3a3e46}
+.ca-account-primary:active{transform:translateY(1px)}
+.ca-account-primary-invert{background:#22252a;color:#fff}
+.ca-account-primary-invert:hover{background:#3a3e46}
+.ca-account-ghost{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#3a3e46;border:1px solid #dfe2e7;border-radius:10px;padding:8px 18px;font-size:12.5px;cursor:pointer;transition:border-color .15s}
+.ca-account-ghost:hover{border-color:#b9bec7}
+.ca-account-secondary{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#3a3e46;border:1px solid #dfe2e7;border-radius:10px;padding:9px 18px;font-size:12px;cursor:pointer;transition:border-color .15s}
+.ca-account-secondary:hover{border-color:#b9bec7}
+.ca-account-secondary:disabled{opacity:.5;cursor:not-allowed}
+
+/* 收支筛选 */
+.ca-account-filters{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.ca-account-filter-row{display:flex;align-items:center;gap:12px}
+.ca-account-filter-row>span{flex-shrink:0;width:28px;font-size:11px;color:#9aa1ac}
+.ca-account-filter-row [role=group]{display:flex;gap:6px;flex-wrap:wrap}
+.ca-account-filter-row button{border:1px solid #e6e8ec;background:#fff;border-radius:999px;padding:5px 15px;font-size:11.5px;color:#5c626b;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.ca-account-filter-row button:hover{border-color:#c7ccd4}
+.ca-account-filter-row button.active{background:#22252a;border-color:#22252a;color:#fff}
+
+/* 收支列表 */
+.ca-account-error{font-size:12px;color:#a24130;background:#fff4ef;border-radius:10px;padding:10px 14px}
+.ca-account-error button{margin-left:10px;text-decoration:underline;border:0;background:none;color:inherit;cursor:pointer}
+.ca-account-note{font-size:11px;color:#9aa1ac;line-height:1.7;margin:8px 0 0}
+.ca-account-txlist{list-style:none;margin:0;padding:0}
+.ca-account-txlist li{display:flex;align-items:center;gap:12px;padding:11px 8px;border-bottom:1px solid #f2f3f6;border-radius:8px;transition:background .12s}
+.ca-account-txlist li:hover{background:#fafbfd}
+.ca-account-txlist li:last-child{border-bottom:0}
+.ca-account-tx-icon{flex-shrink:0;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.ca-account-tx-icon.in{background:#e9f7ee;color:#2e9e5b}
+.ca-account-tx-icon.out{background:#fdeceb;color:#cf5543}
+.ca-account-tx-main{flex:1;min-width:0}
+.ca-account-tx-main strong{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;color:#2c3037;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ca-account-tx-main small{display:block;font-size:10.5px;color:#9aa1ac;margin-top:4px}
+.ca-chip{font-style:normal;flex-shrink:0;font-size:9.5px;font-weight:500;line-height:1;padding:3px 7px;border-radius:999px}
+.ca-chip.ok{background:#e9f7ee;color:#2e9e5b}
+.ca-chip.bad{background:#fdeceb;color:#cf5543}
+.ca-chip.run{background:#fff4e0;color:#b97f16}
+.ca-account-tx-side{text-align:right;flex-shrink:0}
+.ca-account-tx-side b{display:block;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.ca-account-tx-side b.in{color:#2e9e5b}
+.ca-account-tx-side b.out{color:#cf5543}
+.ca-account-tx-side i{display:block;font-style:normal;font-size:10px;color:#a6acb6;margin-top:3px}
+.ca-account-more{display:block;margin:16px auto 0}
+
+@media(max-width:640px){
+  .ca-account{padding:0 12px 40px}
+  .ca-account-title{flex-direction:column;align-items:flex-start;gap:12px}
+  .ca-account-hero{flex-direction:column;align-items:stretch;gap:16px;padding:18px}
+  .ca-account-profile{flex-wrap:wrap}
+}

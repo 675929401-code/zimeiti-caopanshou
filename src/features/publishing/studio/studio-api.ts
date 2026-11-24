@@ -10,11 +10,13 @@ import type { StudioAccount, StudioPlatform, StudioHistoryItem, StudioImportItem
 
 const envelope = z.object({ code: z.union([z.literal(0), z.string()]), data: z.unknown(), message: z.string(), outcome: z.string().optional(), operationId: z.string().uuid().optional() }).passthrough()
 export class StudioRequestError extends Error { constructor(readonly code: string, message: string, readonly status?: number, readonly unknown?: boolean, readonly operationId?: string) { super(message) } }
-export async function studioRequest(path: string, method = 'GET', body?: unknown) {
+export async function studioRequest(path: string, method = 'GET', body?: unknown, signal?: AbortSignal) {
   const owner = assertHostSession().user.id, revision = getHostSessionRevision()
-  const request = () => nativeBffFetch(path, { method, cache: 'no-store', ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) })
+  const request = () => nativeBffFetch(path, { method, cache: 'no-store', signal, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) })
   let response: Response
   try { response = await request() } catch {
+    if (!['GET', 'HEAD'].includes(method.toUpperCase())) throw new StudioRequestError('NETWORK_OUTCOME_UNKNOWN', '这次操作的结果尚未确认，请先核对原记录再继续', undefined, true)
+    if (signal?.aborted) throw new StudioRequestError('NETWORK_UNAVAILABLE', '读取平台选项超时，请重新检测网络后重试')
     await new Promise(resolve => setTimeout(resolve, 600))
     try { response = await request() } catch { throw new StudioRequestError('NETWORK_UNAVAILABLE', '网络连接中断，请检查本地发布服务后刷新重试') }
   }
@@ -43,7 +45,8 @@ export function readStudioWorkspace() {
   if (workspaceInFlight) return workspaceInFlight
   const request = loadStudioWorkspace()
   workspaceInFlight = request
-  void request.finally(() => { if (workspaceInFlight === request) workspaceInFlight = null })
+  const clear = () => { if (workspaceInFlight === request) workspaceInFlight = null }
+  void request.then(clear, clear)
   return request
 }
 export async function readStudioImport(kind: 'media' | 'draft'): Promise<StudioImportItem[]> {
@@ -59,7 +62,7 @@ export async function readStudioImport(kind: 'media' | 'draft'): Promise<StudioI
   const result = z.object({ list: z.array(z.object({ id: z.string(), filename: z.string(), url: z.string(), type: z.enum(['video', 'image']), createdAt: z.string().optional(), nativeAvailability: z.string() }).passthrough()) }).parse(await studioRequest('history/assets?pageSize=50'))
   return result.list.filter(value => value.nativeAvailability === 'ready' && value.url).map(value => ({ id: value.id, title: value.filename || '主站作品', kind: value.type, url: value.url, createdAt: value.createdAt }))
 }
-const historySchema = z.object({ id: z.string().uuid(), title: z.string().optional(), accountType: z.string(), nativeOutcome: z.string(), nativeReportedSuccess: z.boolean().optional(), nativeEvidence: z.string().optional(), nativeReportSource: z.string().optional(), nativeTransport: z.string().optional(), nativeRevision: z.number().int().positive().optional(), nativeConnectionCurrent: z.boolean().optional(), createdAt: z.string().optional(), workLink: z.string().optional(), publishTime: z.string().optional(), status: z.number().optional() }).passthrough()
+const historySchema = z.object({ id: z.string().uuid(), title: z.string().optional(), accountId: z.string().nullish(), accountType: z.string(), nativeOutcome: z.string(), nativeReportedSuccess: z.boolean().optional(), nativeEvidence: z.string().optional(), nativeReportSource: z.string().optional(), nativeTransport: z.string().optional(), nativeRevision: z.number().int().positive().optional(), nativeConnectionCurrent: z.boolean().optional(), nativeDraftId: z.string().uuid().optional(), nativeDraftVersion: z.number().int().positive().optional(), createdAt: z.string().optional(), workLink: z.string().optional(), publishTime: z.string().optional(), status: z.number().optional() }).passthrough()
 export function projectStudioHistory(input: unknown): StudioHistoryItem {
   const value = historySchema.parse(input), state = value.nativeOutcome === 'browser_reported' && value.nativeReportedSuccess === false ? 'failed' : value.nativeOutcome === 'published' && !value.workLink ? 'awaiting_verification' : value.nativeOutcome
   const availableActions: StudioRecordAction[] = ['refresh']
@@ -70,7 +73,7 @@ export function projectStudioHistory(input: unknown): StudioHistoryItem {
     const leadTime = !value.publishTime || Date.parse(value.publishTime) - Date.now() > 600000
     if (['waiting', 'pending', 'queued', 'planned'].includes(state) && leadTime) { availableActions.push('reschedule'); if (value.nativeTransport === 'official_api') availableActions.push('publish_now') }
   }
-  return { id: value.id, title: value.title || '发布内容', platform: value.accountType, state, createdAt: value.createdAt, url: value.workLink, evidence: value.nativeEvidence, revision: value.nativeRevision, transport: value.nativeTransport, publishAt: value.publishTime, availableActions }
+  return { id: value.id, draftId: value.nativeDraftId, draftVersion: value.nativeDraftVersion, title: value.title || '发布内容', platform: value.accountType, accountId: value.accountId ?? undefined, state, createdAt: value.createdAt, url: value.workLink, evidence: value.nativeEvidence, revision: value.nativeRevision, transport: value.nativeTransport, publishAt: value.publishTime, availableActions }
 }
 export async function readStudioHistory(): Promise<StudioHistoryItem[]> {
   return z.array(z.unknown()).parse(await studioRequest('v2/channels/publish/records')).map(projectStudioHistory)
@@ -79,6 +82,22 @@ export function projectStudioGenericRecord(input: unknown): StudioHistoryItem {
   const value = PublishingGenericTargetSchema.parse(input)
   return { id: value.id, operationId: value.operationId, title: value.title || '发布内容', platform: value.platform, accountName: value.accountName, state: value.state, createdAt: value.createdAt, publishAt: value.publishAt, revision: value.revision, transport: 'generic_api', url: value.workLink ?? undefined, evidence: value.state === 'published' ? 'provider_reported' : undefined, message: value.errorCode ?? undefined, availableActions: value.availableActions }
 }
+export async function readCompleteStudioHistoryRange(query: StudioHistoryQuery, isCurrent: () => boolean) {
+  const queryPage = { from: query.from, to: query.to, page: 1, pageSize: 100 }
+  const first = await readStudioHistoryPage(queryPage)
+  const items = new Map(first.items.map(item => [item.id, item]))
+  for (let page = 2; (page - 1) * first.pageSize < first.total; page++) {
+    if (!isCurrent()) throw new Error("安排读取已切换")
+    const result = await readStudioHistoryPage({ ...queryPage, page })
+    if (result.total !== first.total || result.page !== page || result.pageSize !== first.pageSize) {
+      throw new Error('安排在读取期间发生变化，请刷新后查看')
+    }
+    for (const item of result.items) items.set(item.id, item)
+  }
+  if (items.size !== first.total) throw new Error('安排在读取期间发生变化，请刷新后查看')
+  return { ...first, items: [...items.values()], hasMore: false }
+}
+
 /** Explicit history navigation only. Each source page remains owner scoped. */
 export async function readStudioHistoryPage(query: StudioHistoryQuery = {}) {
   const parameters = new URLSearchParams({ page: String(query.page ?? 1), pageSize: String(query.pageSize ?? 30), ...(query.from ? { from: query.from } : {}), ...(query.to ? { to: query.to } : {}) })

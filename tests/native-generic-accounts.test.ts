@@ -64,7 +64,7 @@ before(async () => {
 });
 after(() => { globalThis.fetch = originalFetch; assert.equal(escapedNetwork, 0); });
 
-test("account projection preserves binding IDs, group and CAS without claiming publishing or online status", async () => {
+test("account projection preserves the active binding, group and CAS without claiming publish readiness", async () => {
   const db = new Database([binding()]);
   const [account] = await readList(db as never, user, { configuration });
   assert.equal(account.id, uuid(1)); assert.equal(account.type, "facebook"); assert.equal(account.uid, "platform-1");
@@ -72,7 +72,7 @@ test("account projection preserves binding IDs, group and CAS without claiming p
   assert.equal(account.nativeAccountKind, "generic"); assert.equal(account.nativeTransport, "generic-oauth");
   assert.equal(account.nativeBindingRevision, 7); assert.equal(account.nativeRevision, 7); assert.equal(account.nativeMetadataRevision, 0);
   assert.equal(account.nativeAuthSessionId, sessionId); assert.equal(account.authSessionId, sessionId);
-  assert.equal(account.status, 0); assert.equal(account.nativeBindingStatus, "active"); assert.equal(account.nativeConnectionState, "official_bound");
+  assert.equal(account.status, 1); assert.equal(account.nativeBindingStatus, "active"); assert.equal(account.nativeConnectionState, "official_bound");
   assert.equal(account.nativeConnectionCurrent, true); assert.equal(account.connectionCurrent, true); assert.equal(account.nativeReadOnly, false);
   assert.equal(account.nativePublishAllowed, false); assert.deepEqual(account.capabilities, expectedCapabilities); assert.deepEqual(account.nativeCapabilities, expectedCapabilities);
   assert(!JSON.stringify(account).includes("private-provider-account")); assert(!JSON.stringify(account).includes(namespace));
@@ -122,10 +122,10 @@ test("schema and database failures never return a false empty account inventory"
   await assert.rejects(readOne(failed as never, user, uuid(1), { configuration }), error => (error as Row).code === "NATIVE_GENERIC_ACCOUNTS_UNAVAILABLE");
 });
 
-test("all 11 generic OAuth platforms use metadata availability and never enable publishing", () => {
+test("all 11 generic OAuth platforms can connect when available but still need execution readiness", () => {
   assert.equal(PUBLISHING_OAUTH_PLATFORMS.length, 11);
   for (const platform of PUBLISHING_OAUTH_PLATFORMS) {
-    const projected = projectPlatform({ platform, status: "available", authType: "oauth2", capabilities: { publish: { supported: true } } }, { configured: true });
+    const projected = projectPlatform({ platform, status: "available", authType: "oauth2", capabilities: { auth: { supported: true }, publish: { supported: true } } }, { configured: true });
     assert(projected); assert.equal(projected.platform, platform); assert.equal(projected.nativeConnectionAllowed, true);
     assert.equal(projected.nativeAccountKind, "generic"); assert.equal(projected.nativeTransport, "generic-oauth");
     assert.equal(projected.nativePublishAllowed, false); assert.deepEqual(projected.nativeCapabilities, expectedCapabilities);
@@ -134,7 +134,7 @@ test("all 11 generic OAuth platforms use metadata availability and never enable 
 
 test("LinkedIn unavailable, unknown metadata, wrong auth type and absent configuration forbid connection", () => {
   for (const [item, configured] of [
-    [{ platform: "linkedin", status: "unavailable", authType: "oauth2" }, true],
+    [{ platform: "linkedin", status: "unavailable", authType: "oauth2", capabilities: { auth: { supported: true } } }, true],
     [{ platform: "threads", status: "available", authType: "qrcode" }, true],
     [{ platform: "instagram", authType: "oauth2" }, true],
     [{ platform: "youtube", status: "available", authType: "oauth2" }, false],

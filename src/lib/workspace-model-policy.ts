@@ -19,6 +19,7 @@ export type WorkspaceModelSurface =
   | "film-studio-image"
   | "film-studio-video"
   | "commerce-video"
+  | "commerce-generation-video"
   | "video-page";
 
 export type WorkspaceModelIssue = {
@@ -43,7 +44,7 @@ export const WORKSPACE_MODEL_SURFACES: ReadonlyArray<{
   {
     id: "image-workbench",
     kind: "image",
-    label: "图片创作 · 生图",
+    label: "图片创作（已下线）",
     description: "按图片模型的参考图、分辨率和画幅能力组织生成。",
     storageValue: "image-workbench",
   },
@@ -119,6 +120,13 @@ export const WORKSPACE_MODEL_SURFACES: ReadonlyArray<{
     id: "publish-center-video", kind: "video", label: "发布中心 · 生视频",
     description: "主站发布中心的明确用户动作；每次执行须绑定原生动作及冻结预算。",
     storageValue: "publish-center-video",
+  },
+  {
+    id: "commerce-generation-video",
+    kind: "video",
+    label: "带货创作 · 普通视频生成",
+    description: "可分配文生视频、单图和多参考模型。创作时按当前素材、画幅和时长检查。",
+    storageValue: "commerce-generation-video",
   },
 ] as const;
 
@@ -205,6 +213,7 @@ export function videoWorkspaceSurfaceFromRequest(value: unknown): WorkspaceModel
   if (normalized === "storyboard-workbench" || normalized === "storyboard") return "storyboard-video";
   if (normalized === "video-page" || normalized === "ai-video") return "video-page";
   if (normalized === "commerce-agent" || normalized === "commerce" || normalized === "commerce-video") return "commerce-video";
+  if (normalized === "commerce-generation-video") return "commerce-generation-video";
   if (normalized === "free-canvas" || normalized === "canvas") return "free-canvas-video";
   if (["film-studio", "short-drama-film-studio", "film_video", "film-video"].includes(normalized)) return "film-studio-video";
   return null;
@@ -329,6 +338,6 @@ export function evaluateWorkspaceModelCompatibility(
   if (input.showLastFrame) capabilityLabels.push("尾帧");
   if (input.showAudioInputs) capabilityLabels.push(`音频≤${input.maxReferenceAudios}`);
   if (input.supportsSourceVideoInput) capabilityLabels.push("源视频");
-  if (input.supportsPrompt) capabilityLabels.push("提示词");
+  if (input.supportsPrompt) capabilityLabels.push("可接收文本提示");
   return { compatible: issues.length === 0, issues, warnings, capabilityLabels: unique(capabilityLabels) };
 }

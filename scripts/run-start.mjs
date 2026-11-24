@@ -169,9 +169,12 @@ export function createLocalStandaloneDatabaseEnv(runtime, baseEnv = process.env)
     LOCAL_RUNTIME_PROFILE: LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE,
     NODE_ENV: "production",
     LOCAL_ACCEPTANCE_PREVIEW: "true",
-    // Acceptance previews must never inherit a production publishing executor.
-    // Drafts remain available, but real external posts stay fail-closed locally.
-    PUBLISHING_EXTERNAL_EXECUTION_ENABLED: "false",
+    // Acceptance previews must never inherit a production publishing executor
+    // implicitly. Real external posts stay fail-closed unless the operator
+    // explicitly opts this run in with LOCAL_ACCEPTANCE_ALLOW_EXTERNAL_EXECUTION=1,
+    // which is the only way the publishing execution chain can be exercised
+    // against the loopback database.
+    PUBLISHING_EXTERNAL_EXECUTION_ENABLED: baseEnv.LOCAL_ACCEPTANCE_ALLOW_EXTERNAL_EXECUTION === "1" ? "true" : "false",
     LOCAL_VALIDATION_DIST_DIR: ".next-local-acceptance",
     // 不固定 Cloudflare DoH：本网络直连 DoH 不可达，供应商结果下载必须走系统 DNS。
     AUTODL_H3_LIFECYCLE_ENABLED: "false",

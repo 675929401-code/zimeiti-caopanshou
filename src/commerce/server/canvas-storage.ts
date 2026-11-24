@@ -24,6 +24,6 @@ export function saveCanvasWithinTransaction(owner:string,value:Record<string,any
  const importReview=retainCanvasImportReview(owner,value.id,graph);
  if(value.importReview&&!importReview)throw Error('导入审查信息须由原始案例创建，不能从客户端伪造');
  if(importReview&&!importReview.representationReady&&(graph.nodes.length||graph.edges.length||graph.groups.length))throw new CanvasImportReviewRequired();
- const canvas:CanvasDocument={schemaVersion:2,revision:(previous?.revision||0)+1,id:value.id,...(importReview?{importReview}:{}),title:String(value.title||'未命名画布').slice(0,100),...graph,createdAt:previous?.createdAt||Date.now(),updatedAt:Date.now()};put('canvases',value.id,owner,canvas);return canvas;
+ const canvas:CanvasDocument={schemaVersion:2,revision:(previous?.revision||0)+1,id:value.id,...(previous?.scriptSource?{scriptSource:previous.scriptSource}:{}),...(importReview?{importReview}:{}),title:String(value.title||'未命名画布').slice(0,100),...graph,createdAt:previous?.createdAt||Date.now(),updatedAt:Date.now()};put('canvases',value.id,owner,canvas);return canvas;
 }
 export function saveCanvas(owner:string,value:Record<string,any>):CanvasDocument{return transaction(()=>saveCanvasWithinTransaction(owner,value));}

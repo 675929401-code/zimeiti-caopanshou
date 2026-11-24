@@ -2,7 +2,7 @@ import "server-only";
 import type { AuthUser, getSupabase } from "@/lib/api-middleware";
 import { safeFetchStream } from "@/lib/safe-fetch";
 import { isPublishingSafeHttps } from "@/lib/publishing-contract";
-import { readPublishingProviderConfiguration } from "./publishing-provider-config";
+import { activePublishingProviderForNamespace, type readPublishingProviderConfiguration } from "./publishing-provider-config";
 import { PublishingError } from "./publishing-service";
 
 type Database = ReturnType<typeof getSupabase>;
@@ -25,10 +25,13 @@ export async function readNativePublishingAsset(request: Request, user: AuthUser
   fetchAsset?: typeof safeFetchStream;
 } = {}): Promise<Response> {
   if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(assetId)) unavailable();
-  const configuration = (dependencies.configuration ?? readPublishingProviderConfiguration)();
-  const result = await database.from("pub3_assets").select("id,public_url,size,mime,file_name,sha256").eq("id", assetId).eq("owner_id", user.id).eq("connection_id", configuration.namespace).eq("state", "ready").maybeSingle();
+  const result = await database.from("pub3_assets").select("id,connection_id,public_url,size,mime,file_name,sha256").eq("id", assetId).eq("owner_id", user.id).eq("state", "ready").maybeSingle();
   if (result.error || !result.data) unavailable();
-  const asset = result.data as Record<string, unknown>, url = String(asset.public_url || ""), size = Number(asset.size), mime = String(asset.mime || "");
+  const asset = result.data as Record<string, unknown>;
+  const namespace = String(asset.connection_id || "");
+  const configuration = dependencies.configuration ? dependencies.configuration() : activePublishingProviderForNamespace(namespace);
+  if (!configuration || configuration.namespace !== namespace) unavailable();
+  const url = String(asset.public_url || ""), size = Number(asset.size), mime = String(asset.mime || "");
   if (!isPublishingSafeHttps(url) || !["assets.aitoearn.cn", "assets.aitoearn.ai"].includes(new URL(url).hostname) || !allowedMime.has(mime) || !Number.isSafeInteger(size) || size <= 0 || size > maximumSize) unavailable();
   let range: ReturnType<typeof nativeAssetRange>;
   try { range = nativeAssetRange(request.headers.get("range"), size); }

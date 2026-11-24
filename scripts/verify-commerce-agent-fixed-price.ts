@@ -27,6 +27,9 @@ const video = commerceModelPricing('video', { cost_price: 0.08 }, {
 });
 assert.deepEqual(video, { costPrice: 0.08, publicPrice: 0.12, billingUnit: 'output_second' });
 
+assert.deepEqual(commerceModelPricing('video', {cost_price:45.4}, {publicPrice:1.44,capabilities:{billingUnit:'token'}}),
+  {costPrice:null,publicPrice:null,billingUnit:'token'});
+
 const invalid = commerceModelPricing('agent', { cost_per_use: 'not-a-price', cost_price: -1 }, {
   publicPrice: 999,
   capabilities: { billingUnit: 'token' },
@@ -48,7 +51,7 @@ assert.match(gatewaySource, /accepted\.get\(`\$\{kind\}:\$\{String\(entry\.id\|\
 
 console.log(JSON.stringify({
   suite: 'commerce-agent-fixed-price',
-  passed: 17,
+  passed: 18,
   networkCalls: 0,
   providerCalls: 0,
   walletWrites: 0,

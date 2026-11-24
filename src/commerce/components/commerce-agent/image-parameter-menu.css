@@ -1,0 +1,28 @@
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings {background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:10px;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings section+section {margin-top:8px;padding-top:8px;border-top:1px solid #e5e5e5;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings h3 {font-size:9px;font-weight:600;line-height:13px;margin:0 0 6px;}
+.cs-studio .ca-studio[data-kind=image] .ca-parameter-ratios {gap:4px;}
+.cs-studio .ca-studio[data-kind=image] .ca-parameter-ratios>button {flex:1 1 0;min-width:0;height:70px;}
+.cs-studio .ca-studio[data-kind=image] .ca-parameter-choices {margin:0 2px;display:flex;gap:8px;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings .ca-parameter-choices button {flex:1 1 0;min-width:0;height:30px;padding:0 3px;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings button {border:0;border-radius:8px;background:#f7f7f7;color:#737373;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings button.selected {background:#e8e8e8;color:#171717;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings button:disabled {color:#999;cursor:not-allowed;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings button svg {display:none;}
+.cs-studio .ca-studio[data-kind=image] .ca-media-settings button:focus-visible {outline:2px solid #0471fe;outline-offset:1px;}
+
+.commerce-root.cs-studio .ca-studio[data-kind=image] .ca-image-model-popover {
+  box-sizing:border-box; width:min(304px,100%); max-width:100%; max-height:min(382px,calc(100dvh - 116px));
+  padding:6px; border-radius:10px; background:#fff; overflow-x:hidden; overflow-y:auto;
+  scrollbar-width:none; overscroll-behavior:contain; font:400 12px/1.4 var(--ca-model-face,Arial,sans-serif);
+}
+.commerce-root .ca-image-model-popover::-webkit-scrollbar {display:none;width:0;height:0}
+.commerce-root.cs-studio .ca-image-model-popover>button {
+  display:flex; align-items:center; gap:8px; justify-content:space-between; width:100%; min-width:0; min-height:44px;
+  padding:5px 10px; color:#181818; background:transparent; border:0; border-radius:8px; text-align:left;
+}
+.commerce-root.cs-studio .ca-image-model-popover>button[aria-pressed=true],
+.commerce-root.cs-studio .ca-image-model-popover>button:hover {background:#f1f1f1}
+.commerce-root.cs-studio .ca-image-model-popover b {font-size:13px;font-weight:500}
+.commerce-root.cs-studio .ca-image-model-popover small {margin:2px 0 0;font-size:11px;color:#707070}
+.commerce-root.cs-studio .ca-image-model-popover>button:disabled {opacity:.55}

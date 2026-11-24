@@ -1,3 +1,4 @@
+import { toApisStandardNativeSize } from "./toapis-image-contract";
 import type { ImageResolution } from "./image-model-capabilities";
 
 const IMAGE_PIXEL_SIZES: Record<ImageResolution, Record<string, string>> = {
@@ -131,7 +132,10 @@ export function configuredImageDeliveryPixelSizeFor(
   resolution: ImageResolution,
   aspectRatio: string,
 ): string | null {
-  const map = configuredResolutionMap(objectValue(protocolConfig), "output_pixel_size_by_resolution", resolution);
+  const config = objectValue(protocolConfig);
+  const nativeSize = toApisStandardNativeSize(config.adapter_contract, resolution, aspectRatio);
+  if (nativeSize) return `${nativeSize.width}x${nativeSize.height}`;
+  const map = configuredResolutionMap(config, "output_pixel_size_by_resolution", resolution);
   const baseline = imagePixelSizeFor(resolution, aspectRatio);
   if (!Object.hasOwn(map, aspectRatio)) return baseline;
   const candidate = typeof map[aspectRatio] === "string" ? map[aspectRatio].trim().toLowerCase() : "";

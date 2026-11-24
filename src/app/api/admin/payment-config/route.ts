@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import {
   PAYMENT_PLATFORM_SETTING_KEYS,
   PlatformSettingValidationError,
@@ -55,6 +56,12 @@ async function auditPaymentConfig(
   reasonCode: string,
   metadata: Record<string, unknown> = {},
 ) {
+  const requestKey = (request.headers.get("idempotency-key") || request.headers.get("x-request-id") || "").slice(0, 200);
+  // The audit table accepts one row per administrator and request key. Preserve
+  // the original key for the write intent and record the outcome separately.
+  const auditKey = request.method === "POST" && result !== "allowed" && requestKey
+    ? `payment-config:${result}:${createHash("sha256").update(requestKey).digest("hex")}`
+    : requestKey;
   return appendAdminGovernanceAudit({
     actorId: authorization.actor.userId,
     actorLevel: authorization.access.adminLevel,
@@ -64,7 +71,7 @@ async function auditPaymentConfig(
     reasonCode,
     resource: "platform_settings:payment",
     request,
-    requestKey: (request.headers.get("idempotency-key") || request.headers.get("x-request-id") || "").slice(0, 200),
+    requestKey: auditKey,
     metadata,
   });
 }

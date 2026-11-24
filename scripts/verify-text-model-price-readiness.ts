@@ -177,7 +177,7 @@ assert.ok(llmRoute.includes('code: "MODEL_TOKEN_PRICING_NOT_READY"'));
 const cozeRoute = source("src/app/api/chat/route.ts");
 const cozePriceGate = cozeRoute.indexOf("const rawBillingSnapshot = await getSelectedModelBillingSnapshot");
 assert.ok(cozePriceGate > 0);
-assert.ok(cozeRoute.indexOf("const response = await streamChat(") > cozePriceGate);
+assert.ok(cozeRoute.indexOf("return streamChat(botId, verifiedUserId") > cozePriceGate);
 assert.ok(cozeRoute.includes('code: "COZE_MODEL_TOKEN_PRICING_NOT_READY"'));
 
 console.log(JSON.stringify({

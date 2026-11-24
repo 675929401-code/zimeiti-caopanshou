@@ -197,8 +197,8 @@ check(() => {
 
 check(() => {
   const directors = baselineDirectorCatalog();
-  assert.equal(directors.length, 19);
-  assert.equal(new Set(directors.map((director) => director.key)).size, 19);
+  assert.ok(directors.length > 0);
+  assert.equal(new Set(directors.map((director) => director.key)).size, directors.length);
   assert.ok(directors.every((director) => director.slots.length > 0));
 });
 
@@ -213,7 +213,7 @@ const quoteStore = readFileSync(new URL("../src/commerce-v2/server/quote-store.t
 const directorRoute = readFileSync(new URL("../src/app/api/commerce/v2/director/route.ts", import.meta.url), "utf8");
 const workbenchSource = readFileSync(new URL("../src/commerce-v2/components/workbench.tsx", import.meta.url), "utf8");
 
-check(() => assert.match(registrySource, /identities\.length !== 19/u));
+check(() => assert.match(registrySource, /resolveOperationPrompt\(route\.promptId, binding\?\.promptVersionId, published\)/u));
 check(() => assert.match(registrySource, /const promptVersion = commerceV2Sha256/u));
 check(() => assert.match(registrySource, /outputProtocol: "director-script\/v2"/u));
 check(() => assert.match(catalogRoute, /requireIdentity\(request\)/u));
@@ -260,7 +260,7 @@ console.log(JSON.stringify({
     "exact-capability-validation",
     "immutable-quote-confirmation",
     "recoverable-task-state-machine",
-    "fixed-19-director-registry",
+    "published-director-registry",
     "authenticated-zero-cost-api",
     "workspace-scoped-draft-persistence",
   ],

@@ -4,11 +4,15 @@ import type {Kind,Model} from './models';
 export type CommerceCuratedProfileId=
   |'agent-claude-sonnet-4-6'
   |'agent-gpt-5-6-sol'
+  |'image-gpt-image-2-6'
+  |'image-nano-banana-2-1'
+  |'image-seedream-5-5'
   |'image-seedream-5-pro'
   |'image-gpt-image-2'
   |'image-gpt-image-2-5'
   |'image-gpt-image-2-5-flare-fallback'
   |'image-nano-banana-2'
+  |'image-gemini-3-1-flash'
   |'image-gemini-3-pro-flagship';
 
 export type CommerceCuratedProfileStatus='selectable'|'pending'|'missing';
@@ -63,6 +67,10 @@ const SPECS:readonly CuratedSpec[]=[
     identity:{internalModelIds:['9b177ccc-4afc-4d49-96bb-fdd01f09bf89'],modelNames:['gpt-5.6-sol']},
   },
   {
+    id:'image-seedream-5-5',kind:'image',label:'豆包 Seedream 5.5',role:'flagship',userVisible:true,configurationSelectable:true,
+    identity:{internalModelIds:['pending-cover-model-7066e4fb-d986-4d6d-a173-3a7e94c34abc'],modelNames:['doubao-seedream-5-5-261028'],providers:['lconai']},
+  },
+  {
     id:'image-seedream-5-pro',kind:'image',label:'豆包 Seedream 5.0 Pro',role:'flagship',userVisible:true,configurationSelectable:true,
     identity:{internalModelIds:['cover-model-seedream-5-pro'],modelNames:['doubao-seedream-5-0-pro-260628'],providers:['volcengine']},
   },
@@ -72,12 +80,12 @@ const SPECS:readonly CuratedSpec[]=[
   },
   {
     id:'image-gpt-image-2-5',kind:'image',label:'GPT Image 2.5',role:'flagship',userVisible:true,configurationSelectable:true,
-    identity:{internalModelIds:['gpt-image-25-sunburst-chA'],modelNames:['gpt-image-2.5-sunburst'],providers:['openai_compat']},
+    identity:{internalModelIds:['pending-cover-model-1789125082114-2ea1a1e15b37'],modelNames:['gpt-image-2.5-sunburst'],providers:['openai_compat']},
     pendingMessage:'Sunburst 作为确定性首选渠道；主站配置未满足执行条件时仅可保存选择，不宣称优于其他同族渠道。',
   },
   {
     id:'image-gpt-image-2-5-flare-fallback',kind:'image',label:'GPT Image 2.5 · Flare 内部候补',role:'internal-fallback',userVisible:false,configurationSelectable:false,
-    identity:{internalModelIds:['gpt-image-25-flare-chA'],modelNames:['gpt-image-2.5-flare'],providers:['openai_compat']},
+    identity:{internalModelIds:['pending-cover-model-1789125219296-147da9a502d5'],modelNames:['gpt-image-2.5-flare'],providers:['openai_compat']},
     pendingMessage:'仅保留为内部候补，不向用户提供第二个同族选项。',
   },
   {
@@ -85,9 +93,20 @@ const SPECS:readonly CuratedSpec[]=[
     identity:{internalModelIds:['gemini-3-1-flash-image-chA'],modelNames:['gemini-3.1-flash-image'],providers:['secure_skill_chat']},
   },
   {
-    id:'image-gemini-3-pro-flagship',kind:'image',label:'Gemini 3 Pro Image · 旗舰',role:'flagship',userVisible:true,configurationSelectable:false,
-    identity:{internalModelIds:[],modelNames:['gemini-3-pro-image'],providers:['google','gemini','lconai','openai_compat']},
-    pendingMessage:'当前未绑定官方 gemini-3-pro-image（Nano Banana Pro）身份，保持待接入且不可选择；旧 gemini-3.0-pro-image 或 nano-banana-pro 命名不能代替。',
+    id:'image-gemini-3-1-flash',kind:'image',label:'Gemini 3.1 Flash Image',role:'value',userVisible:true,configurationSelectable:true,
+    identity:{internalModelIds:['pending-cover-model-1789087566193-f4a5f4f1190f'],modelNames:['gemini-3.1-flash-image'],providers:['lconai']},
+  },
+  {
+    id:'image-gpt-image-2-6',kind:'image',label:'GPT Image 2.6 Sunburst',role:'flagship',userVisible:true,configurationSelectable:true,
+    identity:{internalModelIds:['pending-cover-model-1619d332-34dd-4628-9b5d-67d12f705b4a'],modelNames:['gpt-image-2.6-sunburst'],providers:['toapis_images']},
+  },
+  {
+    id:'image-nano-banana-2-1',kind:'image',label:'Nano Banana 2.1',role:'flagship',userVisible:true,configurationSelectable:true,
+    identity:{internalModelIds:['pending-cover-model-e66e3c23-68b3-4516-8c00-2b6aa682672d'],modelNames:['gemini-nano-banana-2.1'],providers:['secure_skill_images']},
+  },
+  {
+    id:'image-gemini-3-pro-flagship',kind:'image',label:'Gemini 3 Pro Image（Nano Banana Pro）',role:'flagship',userVisible:true,configurationSelectable:true,
+    identity:{internalModelIds:['pending-cover-model-cfde692c-1f4a-4160-b8cd-9a4e8c8fbad5'],modelNames:['gemini-3-pro-image'],providers:['secure_skill_images']},
   },
 ] as const;
 
@@ -111,7 +130,7 @@ function exactIdentityMatch(spec:CuratedSpec,model:Pick<Model,'id'|'kind'|'model
   const provider=normalized(model.provider);
   const modelNameMatches=!modelName||spec.identity.modelNames.map(normalized).includes(modelName);
   const providerMatches=!provider||!spec.identity.providers?.length||spec.identity.providers.map(normalized).includes(provider);
-  if(identifierSpec?.id===spec.id)return modelNameMatches&&providerMatches;
+  if(identifierSpec)return identifierSpec.id===spec.id&&modelNameMatches&&providerMatches;
   // A future flagship row may not have a predeclared database id. It remains
   // pending and can be recognized only by the exact official model/provider tuple.
   return !spec.identity.internalModelIds.length&&Boolean(modelName)&&spec.identity.modelNames.map(normalized).includes(modelName)&&providerMatches;

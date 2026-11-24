@@ -97,8 +97,8 @@ export function MemberFeatureBoundary({ children }: { children: React.ReactNode 
   const permission = useMemberPermissions();
   const { state } = useApp();
   // 未上线模块优先展示“开发中”玻璃遮罩：先于会员权限判断，否则用户只会看到“此功能尚未开通”
-  const comingSoon = /^\/(?:youcai|commerce)(?:\/|$)/u.test(pathname || "")
-    ? pathname.startsWith("/commerce") ? "带货创作" : "漫剧创作"
+  const comingSoon = /^\/youcai(?:\/|$)/u.test(pathname || "")
+    ? "漫剧创作"
     : "";
   const requiredFeature = featurePermissionForPath(pathname || "/");
   // AppProvider owns session restoration and anonymous/expired-session redirects.

@@ -4,6 +4,16 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { ensureServerRuntimeEnvLoaded } = await import("@/lib/server-runtime-env");
   ensureServerRuntimeEnvLoaded();
+  // Operations patrol runs in the web process (single instance locally) and is
+  // disabled in the dedicated media-queue worker. Interval 0 turns it off.
+  if (process.env.MEDIA_QUEUE_WORKER_PROCESS !== "1") {
+    try {
+      const { ensureOpsPatrolScheduler } = await import("@/lib/server/ops-patrol-runtime");
+      ensureOpsPatrolScheduler();
+    } catch {
+      // Patrol scheduling is best effort and must never block boot.
+    }
+  }
   // Covers are derived files. Prune them at boot so covers of records that were
   // cleared or expired in an earlier process do not linger as orphans.
   try {

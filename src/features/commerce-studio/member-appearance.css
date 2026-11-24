@@ -1,0 +1,37 @@
+body[data-commerce-appearance=dark] {
+  --account-bg:#181818;
+  --account-text:#f5f5f5;
+  --account-hover:#303030;
+  --account-line:rgb(255 255 255 / .1);
+  --commerce-night-surface:#222;
+  --commerce-night-muted:#aaa;
+}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio {
+  color-scheme:dark;
+  color:var(--account-text);
+  background:var(--account-bg);
+  --ca-line:var(--account-line);
+  --rail-glyph-detail:#181818;
+}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio :is(.ca-content,.cs-home,.cs-home .cs-composer,.cs-market-page,.cs-member-assets,.ca-studio,.ca-chat-shell,.ca-discovery-gallery,.cs-agent-flyout) {
+  color:var(--account-text);
+  background-color:var(--account-bg);
+  border-color:var(--account-line);
+}
+body[data-commerce-appearance=dark] .cs-home-backdrop::before {
+  background:linear-gradient(to bottom,rgb(46 56 66 / .8),rgb(15 15 15 / .57) 45%,#181818),url('/commerce/home-spotlight.jpg') center / cover no-repeat;
+}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio :is(.ca-rail,.cs-scenes-nav,.cs-market-side,.ca-chat-history,.ca-editor,.ca-preview,.ca-recent,.ca-prompt-box,.ca-director-composer,.cs-mini-grid button,.cs-shortcuts button,.cs-home-wallet>button,.cs-home-wallet-menu,.cs-market-detail,.cs-connector-dialog,.cs-market-search,.cs-asset-dialog,.detail-config,.detail-main,.detail-history) {
+  background-color:var(--commerce-night-surface);
+  color:var(--account-text);
+  border-color:var(--account-line);
+}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio :is(h1,h2,h3,h4,strong,b,label,.cs-scenes-nav section>button,.ca-rail button,.cs-home .cs-composer textarea,.cs-home-wallet-menu a,.cs-asset-toolbar button,.cs-mini-grid button,.cs-market-card .cs-market-info) {color:var(--account-text)}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio :is(small,.cs-scenes h2 small,.cs-market-side h3,.cs-mini-grid small,.cs-scenes-nav small,.ca-tabs button:not(.selected)) {color:var(--commerce-night-muted)}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio .cs-home .cs-composer button:not(.cs-send) {color:var(--account-text)}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio .cs-shortcuts img {filter:invert(1)}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio :is(.ca-rail nav button.active,.cs-scenes-nav button[aria-current],.ca-tabs button.selected,.cs-market-side button.selected,.cs-market-categories button[aria-pressed=true]) {background:var(--account-hover);color:var(--account-text)}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio .ca-rail>nav button[aria-current=page] {--rail-glyph-detail:#181818}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio :is(input:not([type=range]),textarea,select) {color:var(--account-text);background-color:var(--commerce-night-surface);border-color:var(--account-line)}
+body[data-commerce-appearance=dark] .commerce-root.cs-studio .cs-home .cs-composer textarea {background:transparent}
+body[data-commerce-appearance=dark] :is(.cs-agent-pref,.cs-agent-pref .cs-pref-left nav,.cs-agent-pref .cs-pref-options,.cs-agent-pref .cs-pref-range,.cs-account-theme) {color:var(--account-text);background-color:var(--commerce-night-surface);border-color:var(--account-line)}

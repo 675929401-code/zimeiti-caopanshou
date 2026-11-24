@@ -15,9 +15,18 @@ const db = {
   get supabaseUrl() { return state.databaseUrl; },
   from(table) {
     const record = { table, filters: [], select: null }; state.reads.push(record);
-    return { select(columns) { record.select = columns; return this; }, eq(column, value) { record.filters.push([column, value]); return this; }, abortSignal() { return this; },
+    return { select(columns) { record.select = columns; return this; }, eq(column, value) { record.filters.push([column, value]); return this; }, is(column, value) { record.filters.push([column, value]); return this; },
+      gt(column, value) { record.filters.push([column, value]); return this; },
+      limit() { return this; }, abortSignal() { return this; },
       async maybeSingle() {
         if (state.queryError) return { data: null, error: { message: 'PRIVATE_DATABASE_DIAGNOSTIC' } };
+        if (table === 'user_auth_sessions') {
+          const filters = Object.fromEntries(record.filters);
+          assert.equal(filters.user_id, state.userId);
+          assert.equal(filters.revoked_at, null);
+          assert.ok(Number.isFinite(Date.parse(filters.expires_at)));
+          return { data: filters.session_id === 'fixture-session-id' ? { session_id: filters.session_id } : null, error: null };
+        }
         if (table === 'users') return { data: { id: state.userId, role: state.role, is_active: state.active, status: state.status, username: 'fixture-user', cash_balance: 0, credits: 0 }, error: null };
         if (table === 'video_tasks') return { data: null, error: null };
         assert.deepEqual(record.filters, [[table === 'video_models' ? 'id' : 'channel_id', baseModel.id]]);
@@ -36,7 +45,7 @@ function load(file) {
   vm.runInNewContext(output, { module: compiledModule, exports: compiledModule.exports, Buffer, URL, Date, Number, Object, Math, Set, Map, String, RegExp, Error, Promise, JSON, AbortSignal, process: { env: { JWT_SECRET: 'fixture-signing-secret', NODE_ENV: 'test' } },
     require(name) {
       if (name === 'next/server') return { NextResponse: { json: (body, init) => Response.json(body, init) } };
-      if (name === '@/lib/auth') return { getJwtSecretString: () => 'fixture-signing-secret', getTokenFromHeaders: headers => headers.get('Authorization')?.slice(7) || null, verifyToken: async token => token === 'normal-fixture-session' ? { userId: state.userId, role: 'admin' } : null };
+      if (name === '@/lib/auth') return { getJwtSecretString: () => 'fixture-signing-secret', getTokenFromHeaders: headers => headers.get('Authorization')?.slice(7) || null, verifyTokenSignature: async token => token === 'normal-fixture-session' ? { userId: state.userId, role: 'admin', sessionId: 'fixture-session-id' } : null };
       if (name === '@/lib/provider-secret') return { resolveProviderSecret: () => { if (!state.secretReady) throw new Error('PRIVATE_CREDENTIAL_DIAGNOSTIC'); return state.resolvedSecret; } };
       if (name === '@/storage/database/supabase-client') return { getSupabaseAdminClient: () => db };
       if (name === '@/storage/object') return { storageManager: { head() { throw new Error('STORAGE_HEAD_FORBIDDEN_IN_PREFLIGHT'); } } };

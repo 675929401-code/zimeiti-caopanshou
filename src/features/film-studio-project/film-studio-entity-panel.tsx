@@ -173,7 +173,7 @@ function modelResolutionOptions(model: PublicImageModel | null): string[] {
 
 function modelLabel(model: PublicImageModel): string {
   const variant = model.variantLabel ? ` · ${model.variantLabel}` : "";
-  return `${model.displayName}${variant} · 报价 ${model.publicPrice.toFixed(2)}`;
+  return `${model.displayName}${variant}`;
 }
 
 function createClientRequestId(prefix: string): string {
@@ -914,7 +914,7 @@ export function FilmStudioEntityPanel({
         </label>
         <span className={styles.quoteBadge}>
           {selectedImageModel
-            ? `单次公开报价 ${selectedImageModel.publicPrice.toFixed(2)}`
+            ? "按本次提交的配置生成"
             : "报价待模型就绪"}
         </span>
         <button

@@ -46,8 +46,8 @@ export function quoteLlmStreamReservation(request: ChatRequest, config: BillingC
   if (!Number.isFinite(thinkingMultiplier) || thinkingMultiplier < 0) return null;
   const roundingAllowance = config.tokenRoundingEnabled ? Math.max(config.tokenRoundingMin, Math.min(config.tokenRoundingMax, config.tokenRoundingUnit)) * 2 : 0;
   const inputBudget = estimateLlmReservationInputBudget(request.messages, roundingAllowance);
-  const outputBudget = Math.ceil(maxOutput * thinkingMultiplier);
-  const quote = calculateCredits({ ...config, inputCostPerMillion: Math.max(config.inputCostPerMillion, config.cachedCostPerMillion) }, inputBudget, outputBudget, 0);
+  const outputBudget = maxOutput;
+  const quote = calculateCredits(config, inputBudget, outputBudget, 0);
   if (!Number.isFinite(quote.creditsCharged) || quote.creditsCharged < 0) return null;
   return { amount: quote.creditsCharged, inputBudget, outputBudget, maxOutput };
 }
@@ -79,7 +79,10 @@ export function validateLlmStreamReservationSettlement(
       409,
     );
   }
-  if (billing.sellPriceRmb < billing.actualCostRmb || billing.profitRmb < 0) {
+  // Only the explicit customer cache-read ceiling can produce an intentional loss.
+  const capLoss = Math.min(billing.cacheReadCapLossRmb || 0,
+    Math.max(0, billing.breakdown.cachedCostRmb - billing.breakdown.cachedSellRmb));
+  if (billing.actualCostRmb - billing.sellPriceRmb > capLoss + 0.000001 || billing.profitRmb < -capLoss - 0.000001) {
     throw new LlmCreditReservationError(
       "LLM_BILLING_MARGIN_INVALID",
       "模型售价低于实际成本，本次未扣款、未交付，请联系管理员核对",

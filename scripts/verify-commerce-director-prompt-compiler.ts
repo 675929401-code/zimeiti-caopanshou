@@ -2,7 +2,17 @@ import assert from 'node:assert/strict';
 import {DIRECTOR_PROMPT_PROVENANCE,assertBenchmarkOriginalDirectorPrompt,benchmarkOriginalDirectorPromptsAcquired} from '../src/commerce/server/director-prompt-provenance';
 import {DIRECTOR_VISIBLE_OUTPUT_HEADINGS,assertDirectorVisibleOutputFormat,compileDirectorPromptLayers,compileIndependentDirectorPrompt} from '../src/commerce/server/director-prompt-compiler';
 
-assert.equal(Object.keys(DIRECTOR_PROMPT_PROVENANCE).length,5);
+assert.deepEqual(
+ Object.entries(DIRECTOR_PROMPT_PROVENANCE).map(([id, source])=>[id,source.kind,source.status]).sort(),
+ [
+  ['fire-agent-independent-core','independent-implementation','verified'],
+  ['benchmark-19-skill-metadata','benchmark-observed','verified'],
+  ['benchmark-current-skill-metadata','benchmark-observed','verified'],
+  ['benchmark-director-output-contract','benchmark-observed','verified'],
+  ['benchmark-reconstructed-core','reverse-engineered','derived'],
+  ['benchmark-admin-original-prompts','benchmark-original','not-acquired']
+ ].sort()
+);
 assert.equal(benchmarkOriginalDirectorPromptsAcquired(),false);
 assert.throws(()=>assertBenchmarkOriginalDirectorPrompt('benchmark-admin-original-prompts'),/尚未取得/);
 

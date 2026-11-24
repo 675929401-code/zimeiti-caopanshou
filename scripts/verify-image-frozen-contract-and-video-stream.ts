@@ -74,6 +74,7 @@ async function main() {
     workflowPrompt: "", fullPrompt: "effective", prompt: "user input", style: "", exactCoverText: "", ratio: "16:9", effectiveResolution: "2K",
     outputPixelSize: "2048x1152", outputPolicy: policy, providerProtocol: "images_generations", IMAGE_FIXED_OUTPUT_COUNT: 1,
     body: {}, referenceImageUrls: [], references: [], referenceUsage: "general", costPrice: 0.05, sellingPrice: 0.1,
+    nativeInvocation: null, nativeInput: { invocation: null, referenceUris: [] as string[] },
     parseImageFailureRequestSnapshot, strictImagePayloadFingerprint: (input: unknown) => createHash("sha256").update(JSON.stringify(input)).digest("hex"),
   };
   const fingerprint = (overrides: object) => compile(`${fingerprintSource}\ngenerationFingerprint;`, { ...fingerprintContext, ...overrides });

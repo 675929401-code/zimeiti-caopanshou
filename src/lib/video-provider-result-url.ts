@@ -126,6 +126,10 @@ export function trustedVideoProviderResultHostname(
   if (protocolType === "newapi_video" && LCONAI_ENDPOINT_HOSTNAMES.has(endpointHostname)) {
     for (const hostname of LCONAI_RESULT_HOSTNAMES) allowed.add(hostname);
   }
+  if (protocolType === "toapis_video" && endpointHostname === "toapis.com") {
+    allowed.add("files.toapis.xyz");
+    allowed.add("ark-acg-cn-beijing.tos-cn-beijing.volces.com");
+  }
 
   // Unknown providers receive no DNS bypass. validateSafeUrl/safeMediaFetch
   // will still accept them when they resolve to a real public address.

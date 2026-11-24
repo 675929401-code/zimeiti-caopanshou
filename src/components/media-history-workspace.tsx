@@ -48,7 +48,6 @@ const CATEGORY_OPTIONS: ReadonlyArray<{ key: CategoryFilter; label: string }> = 
   { key: "storyboard-workbench", label: getPrimaryNavigationLabel("storyboard_workbench", "分镜编排") },
   { key: "cover-studio", label: getPrimaryNavigationLabel("cover", "封面设计") },
   { key: "agent-output", label: "智能体图片" },
-  { key: "commerce-agent", label: getPrimaryNavigationLabel("commerce_agent", "带货创作") },
   { key: "other-tools", label: "其他工具" },
 ];
 
@@ -230,6 +229,7 @@ function normalizeItem(value: unknown): MediaHistoryItem | null {
     ? record.preview as Record<string, unknown>
     : {};
   if (!item.id || (item.kind !== "image" && item.kind !== "video")) return null;
+  if ((item.categoryKey || record.category) === "commerce-agent") return null;
   const normalizedCategory = categoryKey(item.categoryKey || record.category);
   return {
     ...item,

@@ -10,6 +10,7 @@
  * - 优雅错误处理：错误 chunk + close，不使用 controller.error()
  */
 
+import { readChatTokenUsage } from "../reported-token-usage";
 import type { ChatRequest, ProxyResult, StreamCallbacks } from "./types";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "../sse-stream-decoder";
 import { LlmResponseStartError, LlmStreamError, LlmStreamReadError, upstreamContentRejection, upstreamStreamError } from "./stream-error";
@@ -129,11 +130,8 @@ export async function zhipuChatStream(
         if (typeof delta?.content === "string") onContent?.(delta.content);
         const reasoning = delta?.reasoning_content || delta?.reasoning;
         if (typeof reasoning === "string") onReasoning?.(reasoning);
-        if (parsed?.usage) onUsage?.({
-          prompt_tokens: parsed.usage.prompt_tokens || 0,
-          completion_tokens: parsed.usage.completion_tokens || 0,
-          cached_tokens: parsed.usage.cached_tokens || 0,
-        });
+        const usage = readChatTokenUsage(parsed?.usage);
+        if (usage) onUsage?.(usage);
         if (!streamClosed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`));
       };
       let streamReadTimer: ReturnType<typeof setTimeout> | null = null;
@@ -341,11 +339,7 @@ export async function zhipuChat(
   const choice = data.choices?.[0];
   const content = choice?.message?.content || "";
   const reasoning = choice?.message?.reasoning_content || "";
-  const usage = {
-    prompt_tokens: data.usage?.prompt_tokens || 0,
-    completion_tokens: data.usage?.completion_tokens || 0,
-    cached_tokens: data.usage?.cached_tokens || 0,
-  };
+  const usage = readChatTokenUsage(data.usage);
 
   return {
     content,

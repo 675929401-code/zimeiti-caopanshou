@@ -8,6 +8,7 @@
  * 返回 null = 非 type=1，route.ts 继续走普通流程
  */
 
+import { hasDeliveredUsage, missingUsageReceipt } from "@/lib/reported-token-usage";
 import { getLLMProxy } from "@/lib/llm-proxy";
 import type { ChatRequest } from "@/lib/llm-proxy";
 import { llmProxyBindingConfig, type LlmProviderBinding } from "@/lib/llm-provider-contract";
@@ -161,17 +162,14 @@ export async function handleDeepThinkingType1(
             safeClose();
             return;
           }
-          const measuredThinking = thinkingUsage.prompt_tokens > 0 || thinkingUsage.completion_tokens > 0
-            ? thinkingUsage
-            : {
-                prompt_tokens: Math.ceil(JSON.stringify(thinkRequest.messages).length / 2),
-                completion_tokens: Math.ceil(thinkBlock.length / 2),
-                cached_tokens: 0,
-              };
-          const thinkCompletionTokens = Math.ceil(measuredThinking.completion_tokens * (ctx.agentDeductDeepThink || 1));
+          if (!hasDeliveredUsage(thinkingUsage)) {
+            safeEnqueue(encoder.encode(`data: ${JSON.stringify({ ...missingUsageReceipt, phase: "thinking" })}\n\n`));
+            safeClose();
+            return;
+          }
           await settleLlmUsage(
             ctx.verifiedUserId, `${ctx.agentName || "unknown"}(思考)`, actualThinkingModel,
-            measuredThinking.prompt_tokens, thinkCompletionTokens, measuredThinking.cached_tokens,
+            thinkingUsage.prompt_tokens, thinkingUsage.completion_tokens, thinkingUsage.cached_tokens,
             ctx.agentId,
             {
               isAdmin: ctx.userRole === "admin",
@@ -256,17 +254,15 @@ export async function handleDeepThinkingType1(
                   safeClose();
                   return;
                 }
-                const measuredFinal = finalUsage.prompt_tokens > 0 || finalUsage.completion_tokens > 0
-                  ? finalUsage
-                  : {
-                      prompt_tokens: Math.ceil(JSON.stringify(chatRequest.messages).length / 2),
-                      completion_tokens: Math.ceil(fullContent.length / 2),
-                      cached_tokens: 0,
-                    };
+                if (!hasDeliveredUsage(finalUsage)) {
+                  safeEnqueue(encoder.encode(`data: ${JSON.stringify({ ...missingUsageReceipt, phase: "answer" })}\n\n`));
+                  safeClose();
+                  return;
+                }
                 try {
                   const settlement = await settleLlmUsage(
                     ctx.verifiedUserId, ctx.agentName || "unknown", ctx.useModel,
-                    measuredFinal.prompt_tokens, measuredFinal.completion_tokens, measuredFinal.cached_tokens,
+                    finalUsage.prompt_tokens, finalUsage.completion_tokens, finalUsage.cached_tokens,
                     ctx.agentId,
                     {
                       isAdmin: ctx.userRole === "admin",

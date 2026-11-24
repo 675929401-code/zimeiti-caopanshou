@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
   // The native Agent uses an isolated, pinned SDK package. Its worker receives
   // only a per-turn capability and loads these files from the traced release.
   outputFileTracingIncludes: {
+    '/api/commerce/studio/social-video': ['./node_modules/next/dist/compiled/node-html-parser/**/*'],
+    '/api/commerce/studio/captions': ['./integrations/commerce-captions/recognize.py'],
+    '/api/commerce/studio/member-documents': ['./integrations/commerce-documents/worker.py'],
     '/api/native-operations/*': ['./integrations/aitoearn-agent-runtime/package.json', './integrations/aitoearn-agent-runtime/node_modules/**/*'],
   },
   // video-postprocess intentionally discovers a packaged FFmpeg binary at
@@ -184,6 +187,11 @@ const nextConfig: NextConfig = {
       destination: '/youcai',
       permanent: true,
     },
+    // 独立生图工作台与旧对话式图片入口已下线；页面文件已删除，旧书签由配置层直接回首页。
+    { source: '/image-workbench', destination: '/', permanent: true },
+    { source: '/youcai/image-workbench', destination: '/', permanent: true },
+    { source: '/tools/image/image-chat', destination: '/', permanent: true },
+    { source: '/youcai/tools/image/image-chat', destination: '/', permanent: true },
   ],
   // 智音工坊完整版（独立 Next.js 服务，端口 5001）
   rewrites: async () => [
@@ -273,6 +281,11 @@ const nextConfig: NextConfig = {
     ],
   },
   webpack: (config, { isServer, nextRuntime, webpack, dev }) => {
+    if (isServer && nextRuntime !== 'edge') {
+      // This parser is already a Next.js CommonJS bundle. Rebundling breaks its entity decoder.
+      const parser = 'next/dist/compiled/node-html-parser';
+      config.externals = [{ [parser]: 'commonjs ' + parser }, ...[].concat(config.externals || [])];
+    }
     // 生产构建禁用 source map 以减少内存
     if (process.env.NODE_ENV === 'production') {
       config.devtool = false;

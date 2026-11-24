@@ -29,6 +29,12 @@ const ambiguousSetting={...reply,script:{...reply.script!,setting:'浅灰或浅�
 assert.match(directorCanaryQualityIssues(ambiguousSetting).join('；'),/全片设定/u);
 const negativeEnumeration={...reply,script:{...reply.script!,setting:'固定浅灰背景，不出现价格牌、促销贴纸或认证标识'}};
 assert.deepEqual(directorCanaryQualityIssues(negativeEnumeration),[]);
+const fixedPosition={...reply,script:{...reply.script!,productContinuity:['笔记本固定在桌面，不在镜头间被拿起或换位']}};
+assert.deepEqual(directorCanaryQualityIssues(fixedPosition),[]);
+const ambiguousPosition={...reply,script:{...reply.script!,productContinuity:['笔记本不可移动，笔在右手或放在摊开页旁']}};
+assert.match(directorCanaryQualityIssues(ambiguousPosition).join('；'),/商品一致性/u);
+const ambiguousAppearance={...reply,script:{...reply.script!,setting:'不要改变灯光，人物素颜或淡妆'}};
+assert.match(directorCanaryQualityIssues(ambiguousAppearance).join('；'),/全片设定/u);
 const overlong={...reply,script:{...reply.script!,shots:[{...reply.script!.shots[0],speech:'主播：这是一段明显超过五秒自然口播上限而且没有给动作留出停顿时间的台词'}]}};
 assert.match(directorCanaryQualityIssues(overlong).join('；'),/口播/u);
 const audioPlaceholders={...reply,script:{...reply.script!,shots:[{...reply.script!.shots[0],speech:'（无台词）',foley:'无'}]}};
@@ -45,4 +51,4 @@ const revisedWithClose={...revised,script:{...revised.script!,conversionClose:'�
 assert.deepEqual(directorRevisionQualityIssues(JSON.stringify(reply),JSON.stringify(revisedWithClose),{shotId:'镜头1｜展示外观',field:'speech',replacement:'主播：查看商品详情'},revisionContext),[]);
 const badClose={...revisedWithClose,script:{...revisedWithClose.script!,conversionClose:'最后口播变成另一个未经指定的句子'}};
 assert.match(directorRevisionQualityIssues(JSON.stringify(reply),JSON.stringify(badClose),{shotId:'镜头1｜展示外观',field:'speech',replacement:'主播：查看商品详情'},revisionContext).join('；'),/转化摘要/u);
-console.log(JSON.stringify({suite:'commerce-card-acceptance-contract',passed:29,networkCalls:0,providerCalls:0,databaseWrites:0}));
+console.log(JSON.stringify({suite:'commerce-card-acceptance-contract',passed:32,networkCalls:0,providerCalls:0,databaseWrites:0}));

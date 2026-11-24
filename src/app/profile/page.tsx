@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Wallet, Coins, TrendingUp, TrendingDown, ArrowDownUp, Zap, Video, BarChart3, Layers, QrCode, Copy, Check, Gift, Users, UserPlus, Send, Sparkles, Eye, EyeOff, Upload, ShieldCheck, Mail, Smartphone, Camera, ChevronRight, BellRing } from "lucide-react";
 import { RechargeDialog } from "@/components/recharge-dialog";
+import rechargeStyles from "@/components/recharge-card.module.css";
+import walletStyles from "./wallet-overview.module.css";
+import { CASH_RECHARGE_STEP_YUAN, RECHARGE_MIN_YUAN } from "@/lib/recharge-amount";
 import { TransactionBillingExplanation } from "@/components/transaction-billing-explanation";
 import { useApp } from "@/contexts/app-context";
 import { normalizeDisplayText } from "@/lib/display-normalization";
@@ -73,6 +76,14 @@ interface UserAssets {
   recentCashTransactions: CashTxRecord[];
 }
 
+function validUserAssets(value: unknown): value is UserAssets {
+  if (!value || typeof value !== "object") return false;
+  const data = value as UserAssets;
+  return [data.credits,data.cash].every(wallet => wallet &&
+    [wallet.balance,wallet.totalRecharged,wallet.totalConsumed].every(Number.isFinite)) &&
+    Array.isArray(data.recentCreditTransactions) && Array.isArray(data.recentCashTransactions);
+}
+
 interface CreditTxRecord {
   id: string;
   type: string;
@@ -97,6 +108,49 @@ interface CashTxRecord {
   description: string;
   reference_id?: string;
   created_at: string;
+}
+
+function OverviewWallet({ kind, balance, totals, onRecharge, onRedeem }: {
+  kind: "credits" | "cash";
+  balance: number;
+  totals?: UserAssets["cash"];
+  onRecharge: () => void;
+  onRedeem: () => void;
+}) {
+  const cash = kind === "cash";
+  const name = cash ? "现金" : "积分";
+  const Icon = cash ? Wallet : Coins;
+  const format = (value: number) => cash
+    ? value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : value.toLocaleString("zh-CN");
+  const formatTotal = (value?: number) => value === undefined ? "—" : (cash ? "¥" : "") + format(value);
+
+  return (
+    <section className={walletStyles.card} data-wallet={kind} aria-labelledby={`wallet-heading-${kind}`}>
+      <div className={walletStyles.header}>
+        <h2 id={`wallet-heading-${kind}`}>
+          <span className={walletStyles.icon}><Icon aria-hidden="true" /></span>
+          {name}余额
+        </h2>
+        <button type="button" className={walletStyles.redeem} onClick={onRedeem}>
+          卡密兑换<ChevronRight aria-hidden="true" />
+        </button>
+      </div>
+      <div className={walletStyles.main}>
+        <p className={walletStyles.balance}>
+          {cash && <span className={walletStyles.currency}>¥</span>}{format(balance)}
+          {!cash && <span className={walletStyles.unit}>积分</span>}
+        </p>
+        <button type="button" aria-haspopup="dialog" className={walletStyles.recharge} onClick={onRecharge}>
+          {name}充值<ChevronRight aria-hidden="true" />
+        </button>
+      </div>
+      <dl className={walletStyles.totals}>
+        <div><dt>累计充值</dt><dd>{formatTotal(totals?.totalRecharged)}</dd></div>
+        <div><dt>累计消耗</dt><dd>{formatTotal(totals?.totalConsumed)}</dd></div>
+      </dl>
+    </section>
+  );
 }
 
 function remainingAssetPercent(balance: number, consumed: number): number {
@@ -200,6 +254,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
   }, []);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [assetReadFailed, setAssetReadFailed] = useState(false);
   const [assets, setAssets] = useState<UserAssets | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,7 +286,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
     allowed_categories?: string[];
   } | null>(null);
   const [cashBalance, setCashBalance] = useState(0);
-  const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [rechargeType, setRechargeType] = useState<"cash" | "credits" | null>(null);
 
   const displayText = (value: unknown, fallback = "记录") => normalizeDisplayText(value, fallback);
 
@@ -253,12 +308,11 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
         setCashBalance(creditsData.cashBalance ?? 0);
         setTransactions(creditsData.transactions || []);
       }
-      if (assetsRes.ok) {
-        const assetsData = await assetsRes.json();
+      const assetsData: unknown = assetsRes.ok ? await assetsRes.json() : null;
         if (!isCurrent()) return;
-        setAssets(assetsData);
-      }
-    } catch {}
+        if (validUserAssets(assetsData)) { setAssets(assetsData); setAssetReadFailed(false); }
+        else { setAssets(null); setAssetReadFailed(true); }
+    } catch { if (isCurrent()) setAssetReadFailed(true); }
   }, [beginRead, scope]);
 
   // 充值记录相关
@@ -274,10 +328,11 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
     };
     pagination: { page: number; pageSize: number; total: number; creditTotal: number; cashTotal: number; videoTotal: number; paymentTotal: number };
   } | null>(null);
+  const [txError, setTxError] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
   const [txPage, setTxPage] = useState(1);
   const [txType, setTxType] = useState<"all" | "credits" | "cash">("all");
-  const [txDirection, setTxDirection] = useState<"recharge" | "consume">("recharge");
+  const [txDirection, setTxDirection] = useState<"all" | "recharge" | "consume">("recharge");
   const txRequestRef = useRef(0);
 
   // 修改密码
@@ -401,12 +456,11 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
       try {
         const assetsRes = await fetch("/api/user/assets", { headers });
         if (!isCurrent()) return;
-        if (assetsRes.ok) {
-          const assetsData = await assetsRes.json();
-          if (!isCurrent()) return;
-          setAssets(assetsData);
-        }
-      } catch {}
+        const assetsData: unknown = assetsRes.ok ? await assetsRes.json() : null;
+        if (!isCurrent()) return;
+        if (validUserAssets(assetsData)) { setAssets(assetsData); setAssetReadFailed(false); }
+        else { setAssets(null); setAssetReadFailed(true); }
+      } catch { if (isCurrent()) setAssetReadFailed(true); }
 
       if (announceRes.ok) {
         const announceData = await announceRes.json();
@@ -427,6 +481,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
     if (!isCurrent()) return;
     const requestId = ++txRequestRef.current;
     try {
+      setTxError(false);
       setTxLoading(true);
       const token = getToken();
       const params = new URLSearchParams({
@@ -439,8 +494,10 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!isCurrent()) return;
-      if (res.ok) {
+      if (!res.ok) throw new Error("TRANSACTIONS_UNAVAILABLE");
+      {
         const data = await res.json();
+        if (!data.success) throw new Error("TRANSACTIONS_UNAVAILABLE");
         if (!isCurrent()) return;
         if (requestId !== txRequestRef.current) return;
         if (data.success) {
@@ -457,7 +514,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
       }
     } catch (err) {
       if (!isCurrent()) return;
-      console.error("加载交易记录失败:", err);
+      if (requestId === txRequestRef.current) setTxError(true);
     } finally {
       if (isCurrent() && requestId === txRequestRef.current) setTxLoading(false);
     }
@@ -1197,99 +1254,17 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
               </CardContent>
             </Card>
 
-            {/* 核心资产卡片 — 积分 + 现金并排 */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* 积分资产卡片 */}
-              <Card className="bg-[var(--card)] border-[var(--border)] overflow-hidden">
-                <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-400" />
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                        <Coins className="w-5 h-5 text-blue-500" />
-                      </div>
-                      <span className="text-[var(--foreground)] text-sm font-medium">积分资产</span>
-                    </div>
-                    <Button
-                      onClick={() => setActiveTab("cami")}
-                      size="sm"
-                      className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 h-7 text-xs"
-                    >
-                      卡密兑换
-                    </Button>
-                  </div>
-                  <p className="text-3xl font-bold text-blue-500 mb-4">
-                    {assets ? assets.credits.balance.toLocaleString() : user.credits.toLocaleString()}
-                    <span className="text-sm font-normal text-[var(--text-secondary)] ml-1">积分</span>
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-[var(--background)] rounded-lg p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingUp className="w-3.5 h-3.5 text-green-500" />
-                        <span className="text-[var(--text-secondary)] text-xs">累计充值</span>
-                      </div>
-                      <p className="text-[var(--foreground)] text-sm font-semibold">
-                        {assets ? assets.credits.totalRecharged.toLocaleString() : "—"}
-                      </p>
-                    </div>
-                    <div className="bg-[var(--background)] rounded-lg p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-                        <span className="text-[var(--text-secondary)] text-xs">累计消耗</span>
-                      </div>
-                      <p className="text-[var(--foreground)] text-sm font-semibold">
-                        {assets ? assets.credits.totalConsumed.toLocaleString() : "—"}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 现金资产卡片 */}
-              <Card className="bg-[var(--card)] border-[var(--border)] overflow-hidden">
-                <div className="h-1 bg-gradient-to-r from-orange-500 to-amber-400" />
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center">
-                        <Wallet className="w-5 h-5 text-orange-500" />
-                      </div>
-                      <span className="text-[var(--foreground)] text-sm font-medium">现金资产</span>
-                    </div>
-                    <Button
-                      onClick={() => setActiveTab("cami")}
-                      size="sm"
-                      className="bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 h-7 text-xs"
-                    >
-                      卡密兑换
-                    </Button>
-                  </div>
-                  <p className="text-3xl font-bold text-orange-500 mb-4">
-                    ¥{assets ? assets.cash.balance.toFixed(2) : cashBalance.toFixed(2)}
-                    <span className="text-sm font-normal text-[var(--text-secondary)] ml-1">元</span>
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-[var(--background)] rounded-lg p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingUp className="w-3.5 h-3.5 text-green-500" />
-                        <span className="text-[var(--text-secondary)] text-xs">累计充值</span>
-                      </div>
-                      <p className="text-[var(--foreground)] text-sm font-semibold">
-                        ¥{assets ? assets.cash.totalRecharged.toFixed(2) : "—"}
-                      </p>
-                    </div>
-                    <div className="bg-[var(--background)] rounded-lg p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-                        <span className="text-[var(--text-secondary)] text-xs">累计消耗</span>
-                      </div>
-                      <p className="text-[var(--foreground)] text-sm font-semibold">
-                        ¥{assets ? assets.cash.totalConsumed.toFixed(2) : "—"}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <div className={walletStyles.grid} data-testid="profile-wallets">
+              {(["credits", "cash"] as const).map(kind => (
+                <OverviewWallet
+                  key={kind}
+                  kind={kind}
+                  balance={assets?.[kind].balance ?? (kind === "credits" ? user.credits : cashBalance)}
+                  totals={assets?.[kind]}
+                  onRecharge={() => setRechargeType(kind)}
+                  onRedeem={() => setActiveTab("cami")}
+                />
+              ))}
             </div>
 
             {/* 资产变化可视化条 */}
@@ -1369,7 +1344,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                       .slice(0, 8)
                       .map((t) => {
-                        const isRecharge = t.type === "recharge" || t.type === "topup";
+                        const isRecharge = t.type === "recharge" || t.type === "topup" || t.type === "refund" || (t.type === "admin_adjust" && Number(t.amount) > 0);
                         const isCredits = t.assetType === "credits";
                         const amount = Math.abs(Number(t.amount));
                         return (
@@ -1385,7 +1360,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                                   <p className="text-[var(--foreground)] text-sm">
                                     {isCredits && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5" />}
                                     {!isCredits && <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5" />}
-                                    {displayText(t.description, isRecharge ? "充值到账" : isCredits ? "积分消耗" : "现金消耗")}
+                                    {displayText(t.description, t.type === "refund" ? "退款到账" : isRecharge ? "充值到账" : isCredits ? "积分消耗" : "现金消耗")}
                                   </p>
                                   <p className="text-[var(--text-secondary)] text-xs">{formatTime(t.created_at)}</p>
                                 </div>
@@ -1522,33 +1497,31 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
 
             {/* 扫码充值 */}
             <Card className="bg-[var(--card)] border-[var(--border)] overflow-hidden">
-              <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
               <CardHeader className="pb-3">
                 <CardTitle className="text-[var(--foreground)] text-base flex items-center gap-2">
-                  <QrCode className="w-5 h-5 text-blue-500" />
+                  <QrCode className="w-5 h-5 text-[var(--primary)]" />
                   扫码充值
                 </CardTitle>
-                <p className="text-[var(--muted-foreground)] text-xs mt-1">
-                  通过微信/支付宝扫码在线充值积分或现金
-                </p>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 gap-3">
+                <div className={rechargeStyles.entryGrid}>
                   <button
-                    onClick={() => setRechargeOpen(true)}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors"
+                    onClick={() => setRechargeType("credits")}
+                    className={rechargeStyles.entry}
                   >
-                    <Coins className="w-6 h-6 text-blue-500" />
-                    <span className="text-sm font-medium text-[var(--foreground)]">充值积分</span>
-                    <span className="text-xs text-[var(--muted-foreground)]">用于智能体对话</span>
+                    <Coins aria-hidden="true" />
+                    <strong>充值积分</strong>
+                    <small>¥{RECHARGE_MIN_YUAN.credits} 起充</small>
+                    <ChevronRight className={rechargeStyles.arrow} aria-hidden="true" />
                   </button>
                   <button
-                    onClick={() => setRechargeOpen(true)}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-orange-500/20 bg-orange-500/5 hover:bg-orange-500/10 transition-colors"
+                    onClick={() => setRechargeType("cash")}
+                    className={rechargeStyles.entry}
                   >
-                    <Wallet className="w-6 h-6 text-orange-500" />
-                    <span className="text-sm font-medium text-[var(--foreground)]">充值现金</span>
-                    <span className="text-xs text-[var(--muted-foreground)]">用于视频/封面生成</span>
+                    <Wallet aria-hidden="true" />
+                    <strong>充值现金</strong>
+                    <small>¥{RECHARGE_MIN_YUAN.cash} 起充，按 ¥{CASH_RECHARGE_STEP_YUAN} 递增</small>
+                    <ChevronRight className={rechargeStyles.arrow} aria-hidden="true" />
                   </button>
                 </div>
               </CardContent>
@@ -1610,6 +1583,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
           </div>
         )}
 
+        {assetReadFailed && (activeTab === "overview" || activeTab === "records") && <div role="status" className="mb-3 text-sm">资产概览暂时无法读取。<Button variant="link" onClick={() => void refreshAssets()}>刷新资产</Button></div>}
         {/* 充值记录 */}
         {activeTab === "records" && (
           <div className="space-y-4">
@@ -1671,6 +1645,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex bg-[var(--background)] rounded-lg p-0.5" aria-label="记录类型">
                     {([
+                      { value: "all", label: "全部记录" },
                       { value: "recharge", label: "充值记录" },
                       { value: "consume", label: "消费记录" },
                     ] as const).map(opt => (
@@ -1708,15 +1683,16 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
             {/* 交易列表 */}
             <Card className="bg-[var(--card)] border-[var(--border)]">
               <CardContent className="p-4">
-                {txLoading && !txData ? (
+                {txError && <div role="alert" className="py-3">交易记录暂时无法读取。<Button variant="link" onClick={() => loadTransactions(txData ? txPage + 1 : 1, Boolean(txData))}>重新加载</Button></div>}
+                {txError && !txData ? null : txLoading && !txData ? (
                   <div className="text-center py-12 text-[var(--foreground)]">加载中...</div>
                 ) : !txData || txData.transactions.length === 0 ? (
-                  <div className="text-center py-12 text-[var(--foreground)]">暂无{txDirection === "consume" ? "消费" : "充值"}记录</div>
+                  <div className="text-center py-12 text-[var(--foreground)]">暂无{txDirection === "consume" ? "消费" : txDirection === "recharge" ? "充值" : "交易"}记录</div>
                 ) : (
                   <div className="space-y-2">
                     {txData.transactions.map((t: any) => {
                       // 确定图标和颜色
-                      const isRecharge = t.type === "recharge" || t.type === "topup" || t.type === "admin_adjust" || t.category === "payment";
+                      const isRecharge = t.type === "recharge" || t.type === "topup" || t.type === "refund" || (t.type === "admin_adjust" && Number(t.amount) > 0);
                       const isCredits = t.category === "credits";
                       const isVideo = t.category === "video";
                       const isPayment = t.category === "payment";
@@ -1739,7 +1715,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                         }
                         if (isPayment) {
                           const payType = t.type === "credits" ? "积分" : "现金";
-                          const statusText = t.status === "paid" ? "已支付" : t.status === "expired" ? "已过期" : "待支付";
+                          const statusText = t.status === "paid" ? "已支付" : t.status === "expired" ? "已过期" : t.status === "refunded" ? "已退款" : t.status === "failed" ? "失败" : "待支付";
                           return `在线充值${payType} - ${statusText}`;
                         }
                         return displayText(t.description, isRecharge ? "充值" : "消耗");
@@ -1749,20 +1725,17 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                       const getAmountDisplay = () => {
                         if (isVideo) {
                           if (t.status === "completed") {
-                            return { text: `-¥${amount.toFixed(2)}`, className: "text-red-400" };
+                            return { text: "任务已完成", className: "text-[var(--foreground)]" };
                           }
                           if (t.status === "failed") {
-                            return { text: "未扣费", className: "text-[var(--foreground)]" };
+                            return { text: "任务失败", className: "text-[var(--foreground)]" };
                           }
-                          return { text: "待扣费", className: "text-yellow-400" };
+                          return { text: "任务处理中", className: "text-yellow-400" };
                         }
                         if (isPayment) {
-                          if (t.status === "paid") {
-                            const payAmount = t.creditsAmount || t.cashAmount || amount;
-                            return { text: `+${isCredits ? payAmount : `¥${Number(payAmount).toFixed(2)}`}`, className: "text-green-400" };
-                          }
                           return { text: `¥${amount.toFixed(2)}`, className: "text-[var(--foreground)]" };
                         }
+                        if (t.type === "refund") return { text: `退回 ${isCredits ? amount + " 积分" : "¥" + amount.toFixed(2)}`, className: "text-green-400" };
                         if (isRecharge) {
                           return { text: `+${isCredits ? amount : `¥${amount.toFixed(2)}`}`, className: "text-green-400" };
                         }
@@ -1785,6 +1758,9 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                                   <p className="text-[var(--foreground)] text-sm">{getDescription()}</p>
                                 </div>
                                 <p className="text-[var(--foreground)] text-xs mt-0.5">{formatTime(t.createdAt)}</p>
+                                {isPayment && t.tradeOrderId && (
+                                  <a className="text-xs text-[var(--primary)] underline" href={`/payment/result?order=${encodeURIComponent(t.tradeOrderId)}`}>查看到账结果</a>
+                                )}
                               </div>
                             </div>
                             <div className="text-right">
@@ -1812,6 +1788,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                           {isPayment && (
                             <div className="mt-2 pt-2 border-t border-[var(--border)] flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
                               {t.tradeOrderId && <span>订单号: {t.tradeOrderId}</span>}
+                              {isPayment && t.tradeOrderId && <a href={`/payment/result?order=${encodeURIComponent(t.tradeOrderId)}`} className="underline">核对到账状态</a>}
                               {t.paidAt && <span>支付时间: {formatTime(t.paidAt)}</span>}
                             </div>
                           )}
@@ -2449,12 +2426,13 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
       </Dialog>
 
       {/* 扫码充值弹窗 */}
-      <RechargeDialog
-        open={rechargeOpen}
-        onOpenChange={setRechargeOpen}
+      {rechargeType && <RechargeDialog
+        key={rechargeType}
+        open
+        onOpenChange={open => { if (!open) setRechargeType(null); }}
         credits={assets ? assets.credits.balance : (user?.credits ?? 0)}
         cashBalance={cashBalance}
-        mode="both"
+        mode={rechargeType}
         onCreditsUpdated={(newCredits) => {
           if (!isScopeCurrent()) return;
           // 同步到 AppContext 全局状态（侧边栏积分显示会实时更新）
@@ -2468,7 +2446,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
           dispatch({ type: "SET_CASH_BALANCE", payload: newCash });
           refreshAssets();
         }}
-      />
+      />}
 
     </div>
   );

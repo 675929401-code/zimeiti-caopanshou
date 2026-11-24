@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { notifyPaymentCredited, paymentPollDelay, readPaymentWallet, type PaymentWallet } from "@/lib/payment-wallet-client";
+import { useApp } from "@/contexts/app-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
@@ -9,129 +11,66 @@ import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 function PaymentResultContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [status, setStatus] = useState<"loading" | "success" | "failed" | "pending" | "checking" | "invalid" | "reconciliation">("loading");
+  const [status, setStatus] = useState<"loading" | "login" | "unavailable" | "success" | "failed" | "pending" | "checking" | "invalid" | "expired" | "reconciliation">("loading");
+  const [attempt, setAttempt] = useState(0);
+  const [wallet, setWallet] = useState<PaymentWallet | null>(null);
+  const [walletPending, setWalletPending] = useState(false);
   const [orderInfo, setOrderInfo] = useState<{ amount: number; type: string; tradeOrderId: string } | null>(null);
 
+  const tradeOrderId = searchParams.get("order") || searchParams.get("order_id");
+  const { state: { auth } } = useApp();
+  const actorToken = auth.token || "";
+  const actorId = auth.user?.id;
   useEffect(() => {
-    // 创建订单时 returnUrl 格式: ${baseUrl}/payment/result?order=${tradeOrderId}
-    // 迅虎支付回调也会带上 order_id 参数，需要兼容
-    const tradeOrderId = searchParams.get("order") || searchParams.get("order_id");
-    if (!tradeOrderId) {
-      setStatus("invalid");
-      return;
-    }
-
-    let cancelled = false;
-    let retryCount = 0;
-    const maxRetries = 90; // 最多轮询90次，约3分钟（2秒间隔）
-
-    const checkStatus = async () => {
-      if (cancelled) return;
-      retryCount++;
-
-      try {
-        const token = localStorage.getItem("auth_token") || "";
-        const res = await fetch(`/api/payment/status?order=${tradeOrderId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-
-        // API 返回格式: { success: true, order: { status, amount, type, trade_order_id, ... } }
-        const order = data.order;
-
-        if (order?.status === "paid" && order?.balance_credited === true) {
-          if (!cancelled) {
-            setStatus("success");
-            setOrderInfo({
-              amount: Number(order.amount) || 0,
-              type: order.type,
-              tradeOrderId: order.trade_order_id,
-            });
-          }
-        } else if (order?.status === "reconciliation_required"
-          || order?.settlement_status === "reconciliation_required") {
-          if (!cancelled) {
-            setStatus("reconciliation");
-            setOrderInfo({
-              amount: Number(order.amount) || 0,
-              type: order.type || "",
-              tradeOrderId: order.trade_order_id || tradeOrderId,
-            });
-          }
-        } else if (order?.status === "pending") {
-          // 还在处理中，继续轮询
-          if (!cancelled && retryCount < maxRetries) {
-            setTimeout(checkStatus, 2000);
-          } else if (!cancelled) {
-            // 超时，但不是失败——让用户可以手动刷新
-            setStatus("pending");
-          }
-        } else {
-          if (!cancelled) {
-            setStatus("failed");
-            setOrderInfo({
-              amount: Number(order?.amount) || 0,
-              type: order?.type || "",
-              tradeOrderId: order?.trade_order_id || tradeOrderId,
-            });
-          }
-        }
-      } catch {
-        if (!cancelled && retryCount < maxRetries) {
-          setTimeout(checkStatus, 2000);
-        } else if (!cancelled) {
-          setStatus("failed");
-        }
-      }
-    };
-
-    checkStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams]);
-
-  // 手动刷新余额检查
-  const handleManualCheck = () => {
-    setStatus("checking");
-    const tradeOrderId = searchParams.get("order") || searchParams.get("order_id");
+    setOrderInfo(null);
+    setWallet(null);
+    setWalletPending(false);
     if (!tradeOrderId) { setStatus("invalid"); return; }
-
-    (async () => {
+    if (!actorToken || !actorId) { setStatus("login"); return; }
+    setStatus(attempt ? "checking" : "loading");
+    let active = true;
+    const startedAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const current = () => active && localStorage.getItem("auth_token") === actorToken;
+    const check = async () => {
+      if (!current()) return;
       try {
-        const token = localStorage.getItem("auth_token") || "";
-        const res = await fetch(`/api/payment/status?order=${tradeOrderId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const response = await fetch(`/api/payment/status?order=${encodeURIComponent(tradeOrderId)}`, {
+          headers: { Authorization: `Bearer ${actorToken}` }, cache: "no-store",
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]),
         });
-        const data = await res.json();
-        const order = data.order;
-
+        if (!current()) return;
+        if (response.status >= 500) throw new Error("Status unavailable");
+        const { order } = await response.json();
+        if (!current()) return;
+        if (response.status === 401) { setStatus("login"); return; }
+        if (!response.ok || order?.trade_order_id !== tradeOrderId) { setStatus("unavailable"); return; }
+        setOrderInfo({ amount: Number(order.amount), type: order.type, tradeOrderId });
         if (order?.status === "paid" && order?.balance_credited === true) {
           setStatus("success");
-          setOrderInfo({
-            amount: Number(order.amount) || 0,
-            type: order.type,
-            tradeOrderId: order.trade_order_id,
-          });
-        } else if (order?.status === "reconciliation_required"
-          || order?.settlement_status === "reconciliation_required") {
-          setStatus("reconciliation");
-          setOrderInfo({
-            amount: Number(order.amount) || 0,
-            type: order.type || "",
-            tradeOrderId: order.trade_order_id || tradeOrderId,
-          });
-        } else if (order?.status === "pending") {
-          setStatus("pending");
-        } else {
-          setStatus("failed");
+          setWalletPending(true);
+          notifyPaymentCredited(actorToken);
+          const balance = await readPaymentWallet(actorToken);
+          if (current()) { setWallet(balance); setWalletPending(false); }
+          return;
         }
+        if (order.status === "reconciliation_required" || order.settlement_status === "reconciliation_required") {
+          setStatus("reconciliation");
+        } else if (order.status === "expired") { setStatus("expired"); return; }
+        else if (order.status === "pending") setStatus("pending");
+        else { setStatus("failed"); return; }
       } catch {
-        setStatus("failed");
+        if (!current()) return;
+        setStatus(previous => previous === "reconciliation" ? previous : "pending");
       }
-    })();
-  };
+      if (current()) timer = setTimeout(check, paymentPollDelay(startedAt));
+    };
+    void check();
+    return () => { active = false; controller.abort(); clearTimeout(timer); };
+  }, [tradeOrderId, attempt, actorToken, actorId]);
+
+  const handleManualCheck = () => setAttempt(value => value + 1);
 
   return (
     <div className="min-h-screen bg-[var(--background)] flex items-center justify-center p-4">
@@ -144,6 +83,22 @@ function PaymentResultContent() {
               <p className="text-[var(--muted-foreground)] text-sm">正在查询支付结果，请稍候...</p>
             </>
           )}
+          {status === "login" && tradeOrderId && (
+            <>
+              <h2 className="text-xl font-semibold mb-2">登录后查看到账结果</h2>
+              <p className="text-sm mb-4">请使用创建这笔订单的账号登录，登录后会返回此订单。</p>
+              <Button onClick={() => router.push("/login?redirect=" + encodeURIComponent("/payment/result?order=" + encodeURIComponent(tradeOrderId)))}>
+                登录并查看订单
+              </Button>
+            </>
+          )}
+          {status === "unavailable" && (
+            <>
+              <h2 className="text-xl font-semibold mb-2">当前账号无法查看这笔订单</h2>
+              <p className="text-sm mb-4">请在下单账号的充值记录中核对。</p>
+              <Button onClick={() => router.push("/profile?tab=records")}>查看收支记录</Button>
+            </>
+          )}
           {status === "success" && (
             <>
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
@@ -153,7 +108,10 @@ function PaymentResultContent() {
                   {orderInfo.type === "credits" ? "积分充值" : "现金充值"} ¥{orderInfo.amount}
                 </p>
               )}
-              <p className="text-green-400 text-sm mb-1">余额已自动到账</p>
+              <p className="text-sm mb-2 text-[var(--foreground)]" aria-live="polite">{walletPending ? "正在刷新钱包余额…" : wallet
+                ? orderInfo?.type === "credits" ? `当前可用积分 ${wallet.credits.toLocaleString("zh-CN")}` : `当前现金余额 ¥${wallet.cashBalance.toFixed(2)}`
+                : "订单已到账，钱包余额暂未读取。"}</p>
+              {!walletPending && !wallet && <Button variant="outline" onClick={handleManualCheck}>重新读取余额</Button>}
               <p className="text-[var(--muted-foreground)] text-xs mb-6">订单号：{orderInfo?.tradeOrderId}</p>
               <div className="flex gap-3 justify-center">
                 <Button
@@ -164,10 +122,10 @@ function PaymentResultContent() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => router.push("/video")}
+                  onClick={() => router.push("/profile?tab=records")}
                   className="border-[var(--border)] text-[var(--foreground)]"
                 >
-                  去生成视频
+                  查看收支记录
                 </Button>
               </div>
             </>
@@ -175,8 +133,8 @@ function PaymentResultContent() {
           {status === "failed" && (
             <>
               <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">支付确认中</h2>
-              <p className="text-[var(--muted-foreground)] text-sm mb-2">如已完成支付，余额会自动到账</p>
+              <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">暂未确认订单</h2>
+              <p className="text-[var(--muted-foreground)] text-sm mb-2">请使用下单时的账号查询；如已付款，请勿重复支付。</p>
               <p className="text-[var(--muted-foreground)] text-xs mb-6">可点击下方按钮手动确认支付结果</p>
               <div className="flex flex-col gap-3 justify-center">
                 <Button
@@ -195,6 +153,12 @@ function PaymentResultContent() {
               </div>
             </>
           )}
+          {status === "expired" && <>
+            <h2 className="text-xl font-semibold mb-2">订单已过期</h2>
+            <p className="text-sm mb-4">如已付款，请保留订单号联系管理员核对。</p>
+            <p className="text-xs mb-4">{orderInfo?.tradeOrderId}</p>
+            <Button variant="outline" onClick={() => router.push("/profile")}>返回个人中心</Button>
+          </>}
           {status === "invalid" && (
             <>
               <XCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
@@ -222,7 +186,7 @@ function PaymentResultContent() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => router.push("/video")}
+                onClick={() => router.push("/")}
                 className="border-[var(--border)] text-[var(--foreground)]"
               >
                 返回首页
@@ -238,8 +202,7 @@ function PaymentResultContent() {
                   {orderInfo.type === "credits" ? "积分充值" : "现金充值"} ¥{orderInfo.amount}
                 </p>
               )}
-              <p className="text-amber-600 text-sm mb-2">支付记录已收到，但余额到账证据尚不完整</p>
-              <p className="text-[var(--muted-foreground)] text-xs mb-2">请勿重复支付，管理员会按供应商回执与钱包账本核对</p>
+              <p role="status" className="text-amber-600 text-sm mb-2">正在查询本单的到账结果，请勿重复支付。</p>
               <p className="text-[var(--muted-foreground)] text-xs mb-6">订单号：{orderInfo?.tradeOrderId}</p>
               <div className="flex flex-col gap-3 justify-center">
                 <Button

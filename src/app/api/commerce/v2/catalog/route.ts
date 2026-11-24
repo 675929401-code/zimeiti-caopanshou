@@ -10,15 +10,16 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const identity = requireIdentity(request);
-    const [agentModels, imageModels, videoModels] = await Promise.all([
+    const [agentModels, imageModels, videoModels, directors] = await Promise.all([
       commerceV2Models("agent"),
       commerceV2Models("image"),
       commerceV2Models("video"),
+      publicCommerceV2DirectorCatalog(),
     ]);
     return NextResponse.json({
       schema: "commerce-catalog/v2",
       workspaceKey: commerceV2Sha256({ ownerId: identity.id, namespace: "commerce-v2" }).slice(0, 24),
-      directors: publicCommerceV2DirectorCatalog(),
+      directors,
       models: { agent: agentModels, image: imageModels, video: videoModels },
       boundaries: {
         paidSubmissionEnabled: false,

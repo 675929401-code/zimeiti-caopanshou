@@ -20,10 +20,9 @@ const runFile = promisify(execFile);
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const envelope = data => ({ code: 0, data, message: '' });
 const forbiddenInitial = url => /\/(?:media-history|history\/(?:assets|logs|videos)|ai\/|agent\/|material\/|tasks)/u.test(url.pathname)
-  || /\/(?:publishing|publish-center)\/v2$/u.test(url.pathname) && ['drafts', 'collections', 'versions'].includes(url.searchParams.get('resource'))
+  || /\/(?:publishing|publish-center)\/v2$/u.test(url.pathname) && ['collections', 'versions'].includes(url.searchParams.get('resource'))
   || url.pathname === '/api/publish-center'
-  || url.pathname.endsWith('/publishing/generic') && ['records', 'drafts', 'profile'].includes(url.searchParams.get('resource'))
-  || url.pathname.endsWith('/studio/history')
+  || url.pathname.endsWith('/publishing/generic') && ['records', 'profile'].includes(url.searchParams.get('resource'))
   || /\/v2\/channels\/publish\/records/u.test(url.pathname);
 
 export async function main(args = process.argv.slice(2)) {
@@ -33,6 +32,7 @@ export async function main(args = process.argv.slice(2)) {
   assert.equal(origin, 'http://127.0.0.1:5000', 'Exact F-drive local preview required');
   assert.ok(token && identity.user?.id, 'RAM identity from with-local-admin-session is required');
   const proofArg = args.find(value => value.startsWith('--runtime-proof='))?.slice('--runtime-proof='.length);
+  const only = args.filter(value => value.startsWith('--scenario=')).map(value => value.slice('--scenario='.length));
   assert.ok(proofArg, 'Supply --runtime-proof=<fresh root CheckOnly JSON>');
   const proofBytes = await fs.readFile(path.resolve(proofArg));
   const proof = JSON.parse(proofBytes.toString('utf8').replace(/^\uFEFF/u, ''));
@@ -54,7 +54,7 @@ export async function main(args = process.argv.slice(2)) {
   const report = {
     schemaVersion: 'publishing-studio-portal-ui-readonly.v2', at: stamp, passed: false, viewport: { width: 1440, height: 900 }, browser: 'Microsoft Edge',
     runtime: { proofSha256: hash(proofBytes), checkedAt: proof.checkedAt, sourceVersion: proof.sourceVersion, sourceDigest: proof.sourceDigest, buildId: proof.diskBuildId, runningLatest: true },
-    scope: 'Actual local UI and GET-only reads plus separately labelled in-memory GET fixtures. No prepare/upload/publish/save, real plugin execution, paid model call or billing action. Same-origin metadata GETs may read provider capabilities on the server; backend provider metadata traffic is not claimed to be zero.',
+    scope: 'Actual local UI and GET-only reads plus separately labelled in-memory read fixtures. The final review quote is fulfilled in memory. No prepare/upload/publish/save, real plugin execution, paid model call or billing action. Same-origin metadata GETs may read provider capabilities on the server; backend provider metadata traffic is not claimed to be zero.',
     checks: [], scenarios: [], screenshots: [], requests: [], fixtures: [], typography: [], blockedWrites: [], externalRequestsBlocked: [], unsafeReadsBlocked: [], pageErrors: [], consoleErrors: [], limitations: [],
     actualReadEvidence: {}, realWrites: 0, paidModelCalls: 0, publicationCalls: 0,
   };
@@ -118,10 +118,10 @@ export async function main(args = process.argv.slice(2)) {
     const hostMode = theme === 'lattice' ? 'dark' : 'light';
     const projectedUser = options.member ? { ...identity.user, role: 'user', isAdmin: false, adminLevel: null } : identity.user;
     const ready = mode === 'ready' || mode === 'membership';
-    const context = await browser.newContext({ viewport: report.viewport, colorScheme: hostMode, serviceWorkers: 'block', acceptDownloads: false });
+    const context = await browser.newContext({ viewport: report.viewport, colorScheme: hostMode, ...(options.now ? { timezoneId: "Asia/Shanghai" } : {}), serviceWorkers: 'block', acceptDownloads: false });
     contexts.add(context);
     await context.addCookies([{ name: 'auth_token', value: token, url: origin, httpOnly: true, sameSite: 'Lax' }]);
-    await context.addInitScript(({ authToken, user, selectedTheme, selectedMode, fixture }) => {
+    await context.addInitScript(({ authToken, user, selectedTheme, selectedMode, fixture, pluginMode }) => {
       localStorage.setItem('auth_token', authToken);
       localStorage.setItem('auth_user', JSON.stringify(user));
       sessionStorage.setItem('entered_app', '1'); sessionStorage.setItem('trial_dialog_dismissed', '1');
@@ -130,24 +130,43 @@ export async function main(args = process.argv.slice(2)) {
       localStorage.setItem('user_theme_preference_expires_at', new Date(Date.now() + 3600000).toISOString());
       window.__studioVerification = { fixture, pluginPublishCalls: 0 };
       // A trap prevents an extension from converting a UI fixture into a side effect.
-      Object.defineProperty(window, 'AIToEarnPlugin', { configurable: false, writable: false, value: {
-        getVersion: async () => ({ version: '3.3.11' }), checkPermission: async () => ({ granted: true, hostAccess: true }),
+      Object.defineProperty(window, 'AIToEarnPlugin', { configurable: false, writable: false, value: pluginMode === 'missing' ? undefined : {
+        getVersion: async () => pluginMode === 'incompatible' ? { version: 'unrecognized' } : { version: '3.3.11' }, checkPermission: async () => ({ granted: pluginMode !== 'unauthorized', hostAccess: pluginMode !== 'unauthorized' }),
         login: async platform => ({ type: platform, uid: platform === 'xhs' ? 'fixture-xhs-only' : 'fixture-wxsph-only', account: 'fixture-only', nickname: '只读验收夹具' }),
         publish: async () => { window.__studioVerification.pluginPublishCalls++; throw new Error('Verification forbids publication'); },
       } });
-    }, { authToken: token, user: projectedUser, selectedTheme: theme, selectedMode: hostMode, fixture: mode !== 'actual' });
+    }, { authToken: token, user: projectedUser, selectedTheme: theme, selectedMode: hostMode, fixture: mode !== 'actual', pluginMode: options.pluginMode || (mode === 'actual' ? 'missing' : 'present') });
     if (context.routeWebSocket) await context.routeWebSocket('**/*', socket => socket.close());
     const logFixture = (pathname, reason) => { if (!report.fixtures.some(item => item.scenario === scenario && item.path === pathname)) report.fixtures.push({ scenario, path: pathname, reason }); };
     await context.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url()), method = request.method();
       const entry = { scenario, method, path: url.pathname, ...(/\/(?:publishing|publish-center)\/(?:v2|generic)$|\/studio\/history$/u.test(url.pathname) ? { resource: url.searchParams.get('resource'), page: url.searchParams.get('page'), from: url.searchParams.get('from'), to: url.searchParams.get('to') } : {}), delivery: 'pending' };
       if (url.pathname.startsWith('/api/')) report.requests.push(entry);
+      if (scenario === 'fixture-ready' && mode === 'ready' && method === 'POST' && url.origin === origin && url.pathname === API + '/studio/cash-quote') {
+        const payload = request.postDataJSON();
+        const validDigest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
+        const target = payload?.targets?.[0];
+        if (payload?.schemaVersion !== 1 || !validDigest(payload.reviewHash) || payload.targets?.length !== 1
+          || target?.accountId !== accountIds.xhs || target.accountKind !== 'browser' || target.accountRevision !== 1 || !validDigest(target.contentDigest)) {
+          entry.delivery = 'invalid-quote-fixture-input';
+          return json(route, { code: 'FIXTURE_QUOTE_INPUT_MISMATCH', data: null, message: 'Unexpected quote shape' }, 400);
+        }
+        const windowStart = Math.floor(Date.now() / 1000);
+        entry.delivery = 'read-only-quote-fixture';
+        logFixture(url.pathname, 'In-memory quote calculated against the selected fixture account, never sent to the server');
+        return json(route, envelope({ schemaReady: true, reasonCode: 'ready', quote: {
+          schemaVersion: 1, currency: 'CNY', pricingRevision: 1, quoteHash: hash(JSON.stringify(payload)),
+          windowStart, expiresAt: new Date((windowStart + 300) * 1000).toISOString(), reviewHash: payload.reviewHash,
+          availableBalanceCents: 500, estimatedChargeCents: 7, canExecute: true, reasonCode: 'ready',
+          targets: [{ ...target, platform: 'xhs', transport: 'browser_plugin', priceVersionId: uid(940), chargeCents: 7 }],
+        } }));
+      }
       if (!['GET', 'HEAD'].includes(method)) { entry.delivery = 'blocked-write'; report.blockedWrites.push({ scenario, method, path: url.pathname }); return route.abort('blockedbyclient'); }
       if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) { entry.delivery = 'blocked-external'; report.externalRequestsBlocked.push({ scenario, host: url.hostname, path: url.pathname }); return route.abort('blockedbyclient'); }
       // A detail GET reconciles provider state server-side. Only known RAM
       // fixture IDs may be rendered; no real detail GET ever reaches the BFF.
       if (/\/v2\/channels\/publish\/records\//u.test(url.pathname)) {
-        const relative = url.pathname.slice((API + '/v2/channels/publish/records/').length), record = fixtureRecords.find(item => item.id === relative);
+        const relative = url.pathname.slice((API + '/v2/channels/publish/records/').length), record = (options.records || fixtureRecords).find(item => item.id === relative);
         const handoff = relative === `${uid(133)}/user-action`;
         if (mode !== 'actual' && (record || handoff)) {
           entry.delivery = 'read-only-detail-fixture'; logFixture(url.pathname, 'Explicit render-only record/phone-handoff snapshot; real GET reconciliation is prohibited');
@@ -174,15 +193,34 @@ export async function main(args = process.argv.slice(2)) {
       if (mode !== 'actual' && url.pathname.startsWith(API + '/')) {
         entry.delivery = 'read-only-fixture'; logFixture(url.pathname, `${mode} UI snapshot; not actual server availability or publication evidence`);
         if (url.pathname === API + '/session') return json(route, envelope({ version: 'native-host-session.v1', authenticated: true, user: { id: identity.user.id, username: 'fixture-studio', displayName: '发布页只读夹具', role: options.member ? 'user' : 'admin' }, featureNavigationKeys: ['marketplace', 'publish_center', 'cover'], wallet: { cashCents: 0, credits: 0 }, csrfToken: 'READ_ONLY_FIXTURE_NO_WRITE_ALLOWED_'.repeat(3) }));
-        if (url.pathname === API + '/studio/bootstrap') return mode === 'failure' ? json(route, { code: 'FIXTURE_SERVICE_UNAVAILABLE', data: null, message: '只读验收夹具：服务暂时不可用' }, 503) : json(route, envelope(fixtureBootstrap(ready, mode === 'membership')));
-        if (url.pathname === API + '/v2/channels/accounts') return json(route, envelope({ list: fixtureAccounts, total: fixtureAccounts.length }));
+        if (url.pathname === API + '/studio/bootstrap') {
+          if (mode === 'failure') return json(route, { code: 'FIXTURE_SERVICE_UNAVAILABLE', data: null, message: '只读验收夹具：服务暂时不可用' }, 503);
+          const { config, entitlements, schemaReady, access } = fixtureBootstrap(ready, mode === 'membership');
+          return json(route, envelope({ config, entitlements, schemaReady, access }));
+        }
+        if (url.pathname === API + '/v2/channels/accounts') {
+          const list = options.accounts ?? fixtureAccounts;
+          return json(route, envelope({ list, total: list.length }));
+        }
         if (url.pathname === API + '/v2/channels/platforms') return json(route, envelope(fixturePlatforms(ready)));
+        if (url.pathname === API + `/v2/channels/accounts/${accountIds.bilibili}/publish-options/tid/values`) {
+          return json(route, envelope({ field: 'tid', valueType: 'tree', items: [{ value: '100', label: '一级分区', children: [{ value: '1', label: '二级分区' }] }] }));
+        }
+        for (const [platform, field, value, label, filterKey, filterValue] of [
+          ['youtube', 'categoryId', '22', '人物与博客', 'regionCode', 'HK'],
+          ['threads', 'location_id', 'place-1', '上海', 'keyword', '上海'],
+          ['pinterest', 'boardId', 'board-1', '测试画板'],
+        ]) {
+          if (url.pathname !== API + `/v2/channels/accounts/${accountIds[platform]}/publish-options/${field}/values`) continue;
+          if (filterKey && url.searchParams.get(filterKey) !== filterValue) return json(route, { code: 'FIXTURE_FILTER_MISMATCH', data: null, message: 'Unexpected fixture filter' }, 400);
+          return json(route, envelope({ field, valueType: 'list', items: [{ value, label }, { value: 'blocked', label: '不可选择', disabled: true }] }));
+        }
         if (url.pathname === API + '/v2/channels/publish/records') return json(route, envelope(fixtureRecords));
         if (url.pathname === API + '/studio/history') {
           const number = Number(url.searchParams.get('page') || 1), pageSize = Number(url.searchParams.get('pageSize') || 30), from = url.searchParams.get('from'), to = url.searchParams.get('to');
-          const rows = fixtureRecords.filter(item => (!from || Date.parse(item.publishTime || item.createdAt) >= Date.parse(from)) && (!to || Date.parse(item.publishTime || item.createdAt) < Date.parse(to)));
+          const rows = (options.records || fixtureRecords).filter(item => (!from || Date.parse(item.publishTime || item.createdAt) >= Date.parse(from)) && (!to || Date.parse(item.publishTime || item.createdAt) < Date.parse(to)));
           const paged = scenario === 'fixture-history-paging';
-          const items = paged && number === 2 ? [{ ...fixtureRecords[4], id: uid(136), title: '只读夹具第二页原任务' }] : rows;
+          const items = paged && number === 2 ? [{ ...fixtureRecords[4], id: uid(136), title: '只读夹具第二页原任务' }] : rows.slice((number - 1) * pageSize, number * pageSize);
           return json(route, envelope({ items: items.map(value => ({ source: 'legacy', value })), page: number, pageSize, total: paged ? 31 : rows.length }));
         }
         if (url.pathname === API + '/history/assets') return json(route, envelope({ list: [], total: 0, page: 1, pageSize: 50, hasMore: false }));
@@ -194,12 +232,14 @@ export async function main(args = process.argv.slice(2)) {
         return route.abort('blockedbyclient');
       }
       entry.delivery = 'actual-get';
-      if (url.pathname.startsWith(API + '/') && ![API + '/session', API + '/studio/bootstrap', API + '/v2/channels/platforms', API + '/v2/channels/accounts', API + '/v2/channels/publish/records', API + '/studio/history'].includes(url.pathname)) {
+      const draftList = [API + '/publishing/v2', API + '/publishing/generic'].includes(url.pathname) && url.searchParams.get('resource') === 'drafts';
+      if (url.pathname.startsWith(API + '/') && !draftList && ![API + '/session', API + '/studio/bootstrap', API + '/v2/channels/platforms', API + '/v2/channels/accounts', API + '/v2/channels/publish/records', API + '/studio/history'].includes(url.pathname)) {
         entry.delivery = 'blocked-unexpected-native-get'; return route.abort('blockedbyclient');
       }
       return route.continue();
     });
     const page = await context.newPage(); page.setDefaultTimeout(15000);
+    if (options.now) await page.clock.setFixedTime(options.now);
     page.on('pageerror', error => report.pageErrors.push({ scenario, message: safe(error.message).slice(0, 600) }));
     page.on('console', message => { if (message.type() === 'error') report.consoleErrors.push({ scenario, message: safe(message.text()).slice(0, 600) }); });
     page.on('response', response => {
@@ -208,7 +248,8 @@ export async function main(args = process.argv.slice(2)) {
       const entry = [...report.requests].reverse().find(item => item.scenario === scenario && item.path === url.pathname && item.status === undefined);
       if (entry) entry.status = response.status();
     });
-    await page.goto(origin + (options.admin ? '/admin?tab=publishing' : '/publish-center'), { waitUntil: 'domcontentloaded' });
+    const route = options.admin ? '/admin?tab=publishing' : options.accountsTab ? '/publish-center?tab=accounts' : '/publish-center';
+    await page.goto(origin + route, { waitUntil: 'domcontentloaded' });
     await page.getByTestId(options.admin ? 'publishing-procurement' : 'publishing-studio').waitFor({ state: 'visible' });
     if (mode !== 'actual') await page.evaluate(label => {
       const badge = document.createElement('div'); badge.textContent = label; badge.setAttribute('data-qa-fixture', 'true');
@@ -249,9 +290,12 @@ export async function main(args = process.argv.slice(2)) {
   }
   async function noInitialImports(page, scenario) {
     await poll(() => Promise.resolve(requestsFor(scenario).some(item => item.path === API + '/studio/bootstrap' && item.status !== undefined)), 'Bootstrap response did not complete');
-    await page.waitForTimeout(250);
+    await page.getByTestId('studio-overview').waitFor();
     const reads = requestsFor(scenario);
-    check(`${scenario}: default draft has no media/history/AI/draft requests`, !reads.some(item => forbiddenInitial(new URL(item.path + (item.resource ? `?resource=${item.resource}` : ''), origin))), reads.map(({ path: pathname, resource, delivery, status }) => ({ path: pathname, resource, delivery, status })));
+    check(`${scenario}: overview only reads draft summaries and date-bounded history`, !reads.some(item =>
+      forbiddenInitial(new URL(item.path + (item.resource ? `?resource=${item.resource}` : ''), origin))
+      || item.path.endsWith('/studio/history') && (!item.from || !item.to)
+    ), reads.map(({ path: pathname, resource, delivery, status }) => ({ path: pathname, resource, delivery, status })));
     check(`${scenario}: initial overview has no populated editor or loaded draft`, await page.getByTestId('studio-overview').isVisible() && await page.getByTestId('studio-title').count() === 0 && !/本次正在编辑/u.test(await studio(page).innerText()));
     check(`${scenario}: no native subapp navigation`, new URL(page.url()).pathname === '/publish-center');
     check(`${scenario}: no model or admin controls in studio`, !await studio(page).locator('a[href^="/admin"],a[href^="/publish-center/native"],select[name*="model"]').count());
@@ -264,6 +308,7 @@ export async function main(args = process.argv.slice(2)) {
   }
   async function step(page, index) { await page.getByTestId(`studio-step-${index}`).click(); }
   async function scenario(name, kind, fn) {
+    if (only.length && !only.includes(name)) return;
     const start = Date.now();
     try { await fn(); report.scenarios.push({ name, kind, passed: true, elapsedMs: Date.now() - start }); }
     catch (error) {
@@ -277,6 +322,127 @@ export async function main(args = process.argv.slice(2)) {
   }
 
   try {
+    for (const state of ['missing', 'unauthorized', 'incompatible', 'present']) {
+      await scenario(`fixture-plugin-${state}`, 'plugin-bridge-fixture-only', async () => {
+        const { page, context } = await open(`fixture-plugin-${state}`, 'ready', 'soft-white', { pluginMode: state });
+        await page.getByTestId('studio-overview').waitFor();
+        await page.getByTestId('studio-accounts-tab').click();
+        const panel = page.getByTestId('studio-plugin-status');
+        await poll(async () => await panel.getAttribute('data-state') === state, `plugin status ${state}`);
+        await panel.locator('summary').click();
+        await page.getByTestId('studio-plugin-recheck').click();
+        await poll(async () => await panel.getAttribute('data-state') === state, `plugin recheck ${state}`);
+        check(`plugin state ${state} is actionable`, state === 'present' ? (await panel.innerText()).includes('3.3.11') : await panel.getByRole('link', { name: '安装与授权' }).isVisible());
+        const browserAccount = page.getByTestId('studio-platform-xhs');
+        check('linked fixture browser account remains visible', /验收夹具小红书.*浏览器插件/su.test(await browserAccount.innerText()));
+        check('Douyin official and browser routes remain distinct', await page.getByTestId('studio-connect-douyin').isVisible() && await page.getByTestId('studio-connect-browser-douyin').isVisible());
+        await layout(page, `accounts plugin ${state}`);
+        await capture(page, `fixture-plugin-${state}`);
+        await context.close();
+      });
+    }
+    await scenario('fixture-account-card-layout', 'GET-fixture-ui-only', async () => {
+      const { page, context } = await open('fixture-account-cards', 'unready', 'lattice', {
+        accounts: fixtureAccounts.filter(account => account.type === 'douyin'),
+        pluginMode: 'missing',
+      });
+      await page.getByTestId('studio-overview').waitFor();
+      await page.getByTestId('studio-accounts-tab').click();
+      const connected = page.getByTestId('studio-platform-douyin');
+      const empty = page.getByTestId('studio-platform-KWAI');
+      const browser = page.getByTestId('studio-platform-wxSph');
+      await connected.getByText('已连接', { exact: true }).waitFor();
+      await empty.getByText('未连接', { exact: true }).waitFor();
+      check('account catalog has no draft-only notice', await page.getByTestId('studio-publish-notice').count() === 0);
+      check('connected and unconnected cards align in a three-column desktop row', await page.evaluate(() => {
+        const card = key => document.querySelector('[data-testid="studio-platform-' + key + '"]').getBoundingClientRect();
+        const button = key => document.querySelector('[data-testid="studio-connect-' + key + '"]').getBoundingClientRect();
+        const official = card('douyin'), empty = card('KWAI'), browser = card('wxSph');
+        return official.left < empty.left && empty.left < browser.left && Math.abs(official.top - browser.top) < 2
+          && Math.abs(official.height - empty.height) < 2 && Math.abs(button('douyin').top - button('wxSph').top) < 2;
+      }));
+      await capture(page, 'account-cards-desktop');
+      await page.setViewportSize({ width: 1100, height: 900 });
+      await layout(page, 'account cards narrow desktop');
+      await capture(page, 'account-cards-narrow-desktop');
+      await browser.getByTestId('studio-connect-wxSph').click();
+      const setup = page.getByTestId('studio-plugin-setup');
+      await setup.getByRole('link', { name: '安装与授权' }).waitFor();
+      await setup.getByRole('button', { name: '重新检测' }).click();
+      check('browser-only account opens the plugin setup without writes', (await setup.innerText()).includes('视频号'));
+      await page.keyboard.press('Escape');
+      await setup.waitFor({ state: 'hidden' });
+      await page.getByTestId('studio-compose-tab').click();
+      const notice = page.getByTestId('studio-publish-notice');
+      check('draft-only guidance appears in the composer', /当前仅可保存草稿/u.test(await notice.innerText()));
+      await context.close(); contexts.delete(context);
+    });
+    await scenario('fixture-publishing-workflow', 'GET-fixture-ui-only', async () => {
+      const now = new Date('2026-11-30T13:00:00+08:00');
+      const laterToday = '2026-11-30T16:00:00+08:00';
+      const draftIdentity = { nativeDraftId: uid(930), nativeDraftVersion: 1 };
+      const records = [
+        { ...fixtureRecords[0], ...draftIdentity, title: '多平台回执', nativeOutcome: 'published', workLink: 'https://example.com/work', publishTime: laterToday },
+        { ...fixtureRecords[3], ...draftIdentity, accountId: accountIds.douyin, title: '多平台回执', publishTime: laterToday },
+        { ...fixtureRecords[1], ...draftIdentity, title: '多平台回执', publishTime: laterToday },
+        ...Array.from({ length: 99 }, (_, index) => ({ ...fixtureRecords[4], id: uid(1000 + index), title: '排期项目 ' + index, publishTime: laterToday })),
+        { ...fixtureRecords[4], id: uid(1190), title: '跨月安排', publishTime: '2026-12-01T10:00:00+08:00' },
+      ];
+      const { page, context } = await open('fixture-workflow', 'ready', 'lattice', {
+        accounts: fixtureAccounts.filter(account => ['douyin', 'xhs'].includes(account.type)), pluginMode: 'missing', records, now,
+      });
+      await page.getByRole('heading', { name: '今天要发', exact: true }).waitFor();
+      await page.getByRole('heading', { name: '近期待你处理', exact: true }).waitFor();
+      await capture(page, 'workflow-overview');
+      await page.getByTestId('studio-compose-tab').click();
+      const add = page.getByTestId('studio-media-input');
+      await add.waitFor({ state: 'attached' });
+      check('upload and import are together and footer exposes draft save', await page.getByTestId('studio-import-button').isVisible() && await page.getByTestId('studio-save-draft').isVisible());
+      await capture(page, 'workflow-compose-empty');
+      await page.getByTestId('studio-type-video').click();
+      await add.setInputFiles(video);
+      await page.getByTestId('studio-title').fill('本地模拟多平台视频');
+      check('current draft truthfully shows unsaved changes', /尚未保存/u.test(await page.getByTestId('studio-draft-save-status').innerText()));
+      await page.getByTestId('studio-step-next').click();
+      for (const platform of ['douyin', 'xhs']) await page.getByTestId('studio-account-' + accountIds[platform]).click();
+      const checks = page.getByTestId('studio-target-checklist');
+      check('each selected target has its own early check', await checks.locator('li').count() === 2
+        && /插件/u.test(await page.getByTestId('studio-early-check-' + accountIds.xhs).innerText()));
+      await page.getByTestId('studio-step-next').click();
+      check('a missing browser prerequisite prevents confirmation', await page.getByTestId('studio-publish-button').isDisabled());
+      await page.getByTestId('studio-history-tab').click();
+      const summary = page.locator('summary').filter({ hasText: '多平台回执' });
+      await summary.waitFor();
+      const resultText = await summary.innerText();
+      check('one work summarizes published, phone and failed results', /已发布 1/u.test(resultText) && /待手机确认 1/u.test(resultText) && /失败 1/u.test(resultText));
+      await summary.click();
+      await page.getByTestId('studio-record-relay-' + uid(133)).waitFor();
+      check('each receipt identifies its account when the account is still connected', await page.getByTestId('studio-history-' + uid(133)).getByText(/验收夹具抖音/u).isVisible());
+      await capture(page, 'workflow-records');
+      await page.getByTestId('studio-record-detail-' + uid(131)).click();
+      const failedRecord = page.getByTestId('studio-record-detail');
+      await failedRecord.getByText('当前回执没有附上具体失败原因。', { exact: true }).waitFor();
+      check('failure action is scoped to its original record', requestsFor('fixture-workflow').some(value => value.path.endsWith('/publish/records/' + uid(131))));
+      await failedRecord.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.getByTestId('studio-nav-calendar').click();
+      await page.getByRole('button', { name: '周', exact: true }).click();
+      const week = page.getByTestId('studio-calendar-week');
+      await week.getByText('跨月安排', { exact: true }).waitFor();
+      const selected = page.getByTestId('studio-calendar-selected-date');
+      check('week keeps cross-month data and reads dates with more than 100 tasks', /102 项安排/u.test(await selected.innerText())
+        && requestsFor('fixture-workflow').some(value => value.path.endsWith('/studio/history') && value.page === '2'));
+      await week.getByRole('button', { name: '另有 98 项安排', exact: true }).click();
+      check('busy days stay compact and link to the full daily agenda', await selected.evaluate(element => element === document.activeElement));
+      await page.getByLabel('平台', { exact: true }).selectOption('xhs');
+      await week.getByText('跨月安排', { exact: true }).waitFor({ state: 'hidden' });
+      await page.getByLabel('平台', { exact: true }).selectOption('');
+      await page.getByLabel('状态', { exact: true }).selectOption('verify');
+      check('calendar filters preserve the pending phone confirmation', await selected.getByText('1 项安排', { exact: true }).isVisible());
+      await page.getByLabel('状态', { exact: true }).selectOption('all');
+      await capture(page, 'workflow-calendar');
+      await layout(page, 'publishing workflow desktop');
+      await context.close(); contexts.delete(context);
+    });
     await scenario('actual-default-and-adjacent-pages', 'actual-get-ui', async () => {
       const { page, context } = await open('actual-default');
       await noInitialImports(page, 'actual-default');
@@ -310,7 +476,27 @@ export async function main(args = process.argv.slice(2)) {
       }
       await context.close(); contexts.delete(context);
     });
-    await scenario('fixture-ready-local-media-and-final-review', 'GET-fixture-ui-only', async () => {
+    await scenario('actual-account-catalog', 'actual-get-ui', async () => {
+      const { page, context } = await open('actual-catalog', 'actual', 'soft-white', { accountsTab: true });
+      for (const platform of Object.keys(platformNames)) await page.getByTestId(`studio-platform-${platform}`).waitFor();
+      const results = await Promise.all(Object.keys(platformNames).map(async platform => ({
+        platform, canConnect: await page.getByTestId(`studio-connect-${platform}`).isEnabled(),
+      })));
+      report.actualReadEvidence.catalogUi = results;
+      check('current build renders all 14 account tiles', results.length === 14);
+      await poll(async () => await page.getByTestId('studio-plugin-status').getAttribute('data-state') === 'missing', 'clean Edge profile detects no extension bridge');
+      check('actual account page keeps the guide and omits the draft-only notice', await page.getByTestId('studio-plugin-guide-link').isVisible() && await page.getByTestId('studio-publish-notice').count() === 0);
+      await layout(page, 'actual platform accounts');
+      await capture(page, 'actual-platform-accounts');
+      for (const target of ['/', '/cover']) {
+        await page.goto(origin + target, { waitUntil: 'domcontentloaded' });
+        await poll(() => page.locator('body').evaluate(body => body.innerText.trim().length > 80), 'Adjacent page did not render');
+        check(`adjacent ${target} renders without the studio shell`, new URL(page.url()).pathname === target && await studio(page).count() === 0);
+        check(`adjacent ${target} fits the desktop viewport`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      }
+      await context.close(); contexts.delete(context);
+    });
+    await scenario('fixture-ready-local-media-and-final-review', 'fixture-media-and-quote-review-only', async () => {
       const { page, context } = await open('fixture-ready', 'ready');
       await noInitialImports(page, 'fixture-ready');
       await compose(page, 'video');
@@ -345,9 +531,9 @@ export async function main(args = process.argv.slice(2)) {
       await step(page, 2);
       await page.getByTestId(`studio-account-${accountIds.wxSph}`).click();
       await step(page, 3);
-      await page.getByTestId('studio-publish-button').click();
-      await poll(() => studio(page).innerText().then(text => /视频号[\s\S]*标题最多 16/u.test(text)), 'Selected video-channel account must enforce its own 16-character title rule');
-      check('platform-specific rule blocks the combined review', await page.getByTestId('studio-confirm-dialog').count() === 0);
+      const videoChannelCheck = page.getByTestId(`studio-early-check-${accountIds.wxSph}`);
+      await poll(() => videoChannelCheck.innerText().then(text => /标题最多 16/u.test(text)), 'Selected video-channel account must enforce its own 16-character title rule');
+      check('platform-specific rule blocks the combined review', await page.getByTestId('studio-publish-button').isDisabled() && await page.getByTestId('studio-confirm-dialog').count() === 0);
       await step(page, 2);
       await page.getByTestId(`studio-account-${accountIds.wxSph}`).click();
       await step(page, 1);
@@ -356,6 +542,9 @@ export async function main(args = process.argv.slice(2)) {
       await page.getByTestId('studio-publish-button').click();
       const dialog = page.getByTestId('studio-confirm-dialog'); await dialog.waitFor({ state: 'visible' });
       check('final confirmation contains selected account and content', (await dialog.innerText()).includes('验收夹具小红书') && (await dialog.innerText()).includes('本机真实短视频预览'));
+      check('final confirmation shows the exact fixture quote before any execution', await dialog.getByTestId('studio-cash-total').getByText('¥0.07', { exact: true }).isVisible()
+        && await dialog.getByTestId('studio-confirm-submit').isEnabled()
+        && requestsFor('fixture-ready').filter(item => item.method === 'POST').every(item => item.delivery === 'read-only-quote-fixture'));
       check('review opens before any upload/prepare/write', report.blockedWrites.filter(item => item.scenario === 'fixture-ready').length === 0);
       check('dialog keeps focus inside modal', await dialog.evaluate(element => element.contains(document.activeElement)));
       await capture(page, 'fixture-final-review-cancel-only');
@@ -365,7 +554,7 @@ export async function main(args = process.argv.slice(2)) {
       check('cancelling review makes zero plugin publication calls', await page.evaluate(() => window.__studioVerification.pluginPublishCalls) === 0);
       await page.getByTestId('studio-title').fill('重新核对修改后的标题');
       await page.getByTestId('studio-nav-overview').click();
-      check('leaving composer preserves only this in-memory draft', /本次正在编辑/u.test(await page.getByTestId('studio-overview').innerText()));
+      check('leaving composer preserves this in-memory draft', await page.getByTestId('studio-overview').getByText('重新核对修改后的标题', { exact: true }).isVisible());
       await page.getByTestId('studio-compose-tab').click(); await step(page, 3);
       await page.getByTestId('studio-publish-button').click(); await dialog.waitFor();
       check('a new review reflects edited content and does not reuse cancelled title', (await dialog.innerText()).includes('重新核对修改后的标题') && !(await dialog.innerText()).includes('本机真实短视频预览'));
@@ -397,10 +586,26 @@ export async function main(args = process.argv.slice(2)) {
       const copyright = page.getByTestId('studio-option-copyright');
       check('copyright branch labels distinguish original and reprint', (await copyright.locator('option').allTextContents()).includes('原创') && (await copyright.locator('option').allTextContents()).includes('转载'));
       await copyright.selectOption('1');
-      await page.getByTestId('studio-option-tid').fill('1');
+      await page.getByTestId('studio-option-load-tid').click();
+      await page.getByTestId('studio-option-tid').selectOption({ label: '一级分区 / 二级分区' });
+      check('Bilibili options use the selected bound account', requestsFor('fixture-options').some(item => item.path === API + `/v2/channels/accounts/${accountIds.bilibili}/publish-options/tid/values` && item.method === 'GET'));
       await page.getByTestId('studio-option-source').fill('已授权来源仅作本地字段夹具');
       check('reprint branch exposes a required source field', /必填/u.test(await page.getByTestId('studio-option-source').locator('..').innerText()));
       await capture(page, 'fixture-bilibili-conditional-source');
+      await choose('youtube'); await advanced();
+      await page.getByLabel('分类地区').fill('hk');
+      await page.getByTestId('studio-option-load-categoryId').click();
+      await page.getByTestId('studio-option-categoryId').selectOption('22');
+      check('YouTube category follows the selected region and account', await page.getByTestId('studio-option-categoryId').inputValue() === '22');
+      await choose('threads'); await advanced();
+      await page.getByLabel('地点关键词').fill('上海');
+      await page.getByTestId('studio-option-load-location_id').click();
+      await page.getByTestId('studio-option-location_id').selectOption('place-1');
+      check('Threads location search sends the typed keyword', await page.getByTestId('studio-option-location_id').inputValue() === 'place-1');
+      await choose('pinterest');
+      await page.getByTestId('studio-option-load-boardId').click();
+      await page.getByTestId('studio-option-boardId').selectOption('board-1');
+      check('Pinterest board uses platform choices and disables unavailable entries', await page.getByTestId('studio-option-boardId').inputValue() === 'board-1' && await page.getByTestId('studio-option-boardId').locator('option[value="blocked"]').isDisabled());
       await choose('linkedin'); await advanced();
       check('unverified private audience cannot be selected', await page.getByTestId('studio-option-visibility').locator('option[value="0"]').isDisabled());
       check('unverified non-feed distribution cannot be selected', await page.getByTestId('studio-option-distribution').locator('option[value="1"]').isDisabled());
@@ -411,7 +616,7 @@ export async function main(args = process.argv.slice(2)) {
       check('unverified collaborator setting is visibly blocked', await page.getByTestId('studio-option-blocked-collaborators').isVisible());
       await choose('wxGzh');
       check('unverified official-account identity is explained before execution', /发布身份.*(?:核实|确认)/u.test(await page.getByTestId('studio-target-editor').innerText()));
-      for (const platform of ['bilibili', 'linkedin', 'facebook', 'instagram', 'wxGzh']) await page.getByTestId(`studio-account-${accountIds[platform]}`).click();
+      for (const platform of ['bilibili', 'youtube', 'threads', 'pinterest', 'linkedin', 'facebook', 'instagram', 'wxGzh']) await page.getByTestId(`studio-account-${accountIds[platform]}`).click();
       await page.getByTestId(`studio-target-tab-${accountIds.twitter}`).click(); await advanced();
       check('switching target tabs preserves typed options and false values', await page.getByTestId('studio-option-poll-options-0').inputValue() === '选项甲' && await page.getByTestId('studio-option-made_with_ai').inputValue() === 'false');
       await step(page, 3);
@@ -431,15 +636,11 @@ export async function main(args = process.argv.slice(2)) {
       check('accounts tab updates the new page query', new URL(page.url()).searchParams.get('tab') === 'accounts');
       check('accounts tab retains unavailable platform catalog', await studio(page).getByRole('heading', { name: 'YouTube', exact: true }).isVisible());
       for (const name of Object.values(platformNames)) check(`platform catalog retains ${name}`, await studio(page).getByRole('heading', { name, exact: true }).isVisible());
-      check('unconnected platform has disabled connect action', await studio(page).locator('section').filter({ has: page.getByRole('heading', { name: 'YouTube', exact: true }) }).getByRole('button', { name: '连接账号', exact: true }).isDisabled());
-      await page.getByTestId('studio-connect-douyin').click();
-      const connection = page.getByTestId('studio-connect-channel'); await connection.waitFor();
-      check('Douyin exposes both connection channels before authorization', await page.getByTestId('studio-connect-channel-browser_plugin').isVisible() && await page.getByTestId('studio-connect-channel-official_api').isVisible());
-      await capture(page, 'fixture-douyin-channel-choice-cancel-only');
-      await connection.getByRole('button', { name: '暂不连接', exact: true }).click();
+      check('unavailable platform has disabled connect action', await page.getByTestId('studio-connect-youtube').isDisabled());
+      check('Douyin exposes both connection channels before authorization', await page.getByTestId('studio-connect-browser-douyin').isVisible() && await page.getByTestId('studio-connect-douyin').isVisible());
       await capture(page, 'fixture-platform-accounts');
       await page.getByTestId('studio-history-tab').click();
-      await poll(() => Promise.resolve(requestsFor('fixture-import').some(item => item.path === API + '/studio/history')), 'History tab must read paginated publication records');
+      await poll(() => Promise.resolve(requestsFor('fixture-import').some(item => item.path === API + '/studio/history' && !item.from && !item.to)), 'History tab must read paginated publication records');
       check('history tab does not read other-module history', !requestsFor('fixture-import').some(item => /\/history\/|\/media-history|\/agent\/|\/ai\//u.test(item.path)));
       await studio(page).getByText('只读夹具明确失败', { exact: true }).waitFor();
       const failure = studio(page).locator('article').filter({ hasText: '只读夹具明确失败' });
@@ -474,7 +675,7 @@ export async function main(args = process.argv.slice(2)) {
       check('calendar selection itself does not reconcile individual records', !requestsFor('fixture-calendar').some(item => /\/publish\/records\//u.test(item.path)));
       await layout(page, 'calendar'); await capture(page, 'fixture-calendar-selected-day');
       await page.getByRole('button', { name: '下个月', exact: true }).click();
-      await poll(() => studio(page).innerText().then(text => /当前已读取记录/u.test(text)), 'Empty calendar day must describe only observed records');
+      await page.getByRole('heading', { name: '这一天没有符合筛选条件的安排', exact: true }).waitFor();
       check('calendar navigation does not attempt mutation', !report.blockedWrites.some(item => item.scenario === 'fixture-calendar'));
       await context.close(); contexts.delete(context);
     });
@@ -502,7 +703,8 @@ export async function main(args = process.argv.slice(2)) {
       await page.getByTestId(`studio-record-detail-${uid(135)}`).click(); await detail.waitFor();
       await page.getByTestId('studio-record-resume').click();
       const resume = page.getByTestId('studio-record-action-confirm'); await resume.waitFor();
-      check('original browser plan has a cancellable restore review', /原计划|原内容/u.test(await resume.innerText()) && /不扣额度|不调用插件/u.test(await resume.innerText()));
+      check('original browser plan has a cancellable restore review', /此步不会发出作品/u.test(await resume.innerText())
+        && await page.getByTestId('studio-record-action-cancel').isVisible() && !report.blockedWrites.some(item => item.scenario === 'fixture-record-actions'));
       await capture(page, 'fixture-original-browser-plan-resume-cancel-only');
       await page.getByTestId('studio-record-action-cancel').click(); await detail.waitFor(); await page.getByTestId('studio-record-close').click();
       check('history detail reads are all isolated fixtures', requestsFor('fixture-record-actions').filter(item => /\/publish\/records\//u.test(item.path)).every(item => item.delivery === 'read-only-detail-fixture'));
@@ -513,7 +715,7 @@ export async function main(args = process.argv.slice(2)) {
       const { page, context } = await open('fixture-history-paging', 'ready'); await noInitialImports(page, 'fixture-history-paging');
       await page.getByTestId('studio-history-tab').click(); await page.getByTestId(`studio-history-${uid(134)}`).waitFor();
       await studio(page).getByRole('button', { name: '下一页', exact: true }).click(); await page.getByTestId(`studio-history-${uid(136)}`).waitFor();
-      check('second history page replaces the first without scanning all history', await page.getByTestId(`studio-history-${uid(134)}`).count() === 0 && requestsFor('fixture-history-paging').filter(item => item.path === API + '/studio/history').map(item => item.page).join(',') === '1,2');
+      check('second history page replaces the first without scanning all history', await page.getByTestId(`studio-history-${uid(134)}`).count() === 0 && requestsFor('fixture-history-paging').filter(item => item.path === API + '/studio/history' && !item.from && !item.to).map(item => item.page).join(',') === '1,2');
       check('history paging uses unified owner endpoint without legacy full-list GET', !requestsFor('fixture-history-paging').some(item => item.path === API + '/v2/channels/publish/records'));
       await capture(page, 'fixture-history-second-page'); await studio(page).getByRole('button', { name: '上一页', exact: true }).click(); await page.getByTestId(`studio-history-${uid(134)}`).waitFor();
       await context.close(); contexts.delete(context);
@@ -556,7 +758,7 @@ export async function main(args = process.argv.slice(2)) {
       check(`${mode} explains unavailable service`, /未开放|不可用|尚未|未就绪|暂时|读取失败|连接失败/u.test(text));
       if (mode === 'unready') {
         const notice = page.getByTestId('studio-publish-notice');
-        check('closed execution ignores a contradictory stale announcement', await notice.getAttribute('data-execution') === 'disabled' && /发布执行已关闭/u.test(await notice.innerText()) && !/执行已开启|故意冲突/u.test(await notice.innerText()));
+        check('closed execution ignores a contradictory stale announcement', await notice.getAttribute('data-execution') === 'disabled' && /当前仅可保存草稿/u.test(await notice.innerText()) && !/执行已开启|故意冲突/u.test(await notice.innerText()));
       }
       await layout(page, mode); await capture(page, `fixture-${mode}`); await context.close(); contexts.delete(context);
     });
@@ -579,7 +781,7 @@ export async function main(args = process.argv.slice(2)) {
     check('no unexpected native GET request', !report.requests.some(item => item.delivery === 'blocked-unexpected-native-get'));
     check('no unexpected admin GET request', !report.requests.some(item => item.delivery === 'blocked-unexpected-admin-get'));
     check('no browser page errors', report.pageErrors.length === 0, report.pageErrors);
-    report.passed = report.scenarios.every(item => item.passed) && report.checks.every(item => item.passed);
+    report.passed = report.scenarios.length > 0 && only.every(name => report.scenarios.some(item => item.name === name)) && report.scenarios.every(item => item.passed) && report.checks.every(item => item.passed);
   } catch (error) {
     report.fatal = safe(error.message).slice(0, 1400);
   } finally {

@@ -1,0 +1,1051 @@
+{
+  "schema": "commerce-benchmark-director-catalog-evidence/v1",
+  "capturedAt": "2026-11-20T00:30:57+08:00",
+  "origin": "https://maolong.da-ai.cc",
+  "sourceEndpoint": "/api/v1/video-creator/skills",
+  "access": "normal-authorized-read-only",
+  "rawPayloadSha256": "5488d71c536245f3d45f3bfbe15ce2a63b0c854d7cb2b2638679c69c3b67748b",
+  "itemCount": 20,
+  "items": [
+    {
+      "skillKey": "ecommerce-spoken-selling",
+      "configVersion": "0c693e534bc6212a98ef5123a87f61d53c0240de318b16990618a6b3c6810ca2",
+      "isDefault": false,
+      "category": {
+        "key": "ecommerce",
+        "label": "电商带货",
+        "order": 10,
+        "is_exposed": true
+      },
+      "label": "口播带货",
+      "description": "真人推荐，建立购买信任",
+      "sortOrder": 10,
+      "isRecommended": true,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "ecommerce-promotion-conversion",
+      "configVersion": "1242986c67ac28458504b0b7ef107f4e3fac1427bd22675ff858eb03be747a38",
+      "isDefault": false,
+      "category": {
+        "key": "ecommerce",
+        "label": "电商带货",
+        "order": 10,
+        "is_exposed": true
+      },
+      "label": "促销转化",
+      "description": "放大优惠，推动立即下单",
+      "sortOrder": 20,
+      "isRecommended": true,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "ecommerce-scene-seeding",
+      "configVersion": "56a4be54bceb47274fd6a562b739d4bd6aa593ed7de00bd042ee08a1b8edcc37",
+      "isDefault": false,
+      "category": {
+        "key": "ecommerce",
+        "label": "电商带货",
+        "order": 10,
+        "is_exposed": true
+      },
+      "label": "场景种草",
+      "description": "植入场景，激发使用需求",
+      "sortOrder": 30,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "ecommerce-pain-point-solution",
+      "configVersion": "afe5ed41377ff990d15d0873d1dbeecee1921eadea99b4f85e240d51f21ef7b4",
+      "isDefault": false,
+      "category": {
+        "key": "ecommerce",
+        "label": "电商带货",
+        "order": 10,
+        "is_exposed": true
+      },
+      "label": "痛点解决",
+      "description": "直击痛点，展示解决效果",
+      "sortOrder": 40,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "ecommerce-function-demo",
+      "configVersion": "837b2e8df6af54af037afb23364c17532a9434d0351b1a2da288f310b0b724b0",
+      "isDefault": false,
+      "category": {
+        "key": "ecommerce",
+        "label": "电商带货",
+        "order": 10,
+        "is_exposed": true
+      },
+      "label": "功能演示",
+      "description": "演示功能，证明产品价值",
+      "sortOrder": 50,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "local-store-discovery",
+      "configVersion": "73cb29f9a1c1e42a19c4a3406d94c4d02ec7ca4cf48b28fad3e6720cf9d3876e",
+      "isDefault": false,
+      "category": {
+        "key": "local-store",
+        "label": "同城到店",
+        "order": 20,
+        "is_exposed": true
+      },
+      "label": "门店发现",
+      "description": "突出特色，制造到店理由",
+      "sortOrder": 10,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "local-store-visit-record",
+      "configVersion": "870d724d80b540616b70be845035d5afca1363dc1779cbc0dec4aad7d6fc4625",
+      "isDefault": false,
+      "category": {
+        "key": "local-store",
+        "label": "同城到店",
+        "order": 20,
+        "is_exposed": true
+      },
+      "label": "到店实录",
+      "description": "真实体验，建立消费信任",
+      "sortOrder": 21,
+      "isRecommended": true,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "local-store-signature-experience",
+      "configVersion": "931769d38b2d0b5c9a6b34896fe768172fdb6c4f51cc2418022b7d295f635500",
+      "isDefault": false,
+      "category": {
+        "key": "local-store",
+        "label": "同城到店",
+        "order": 20,
+        "is_exposed": true
+      },
+      "label": "招牌体验",
+      "description": "聚焦招牌，证明门店价值",
+      "sortOrder": 30,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "local-store-group-buy-conversion",
+      "configVersion": "73c68ce69bd90d17b348e3d974f4926ab44fd80459f560b8ad35c7de90143618",
+      "isDefault": false,
+      "category": {
+        "key": "local-store",
+        "label": "同城到店",
+        "order": 20,
+        "is_exposed": true
+      },
+      "label": "同城团购",
+      "description": "突出优惠，推动到店核销",
+      "sortOrder": 50,
+      "isRecommended": true,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "face-slap-reversal",
+      "configVersion": "187697232e37bba64f1ab0e0a43e6f3d4943bd8dd57f9aa3b2818c429095df38",
+      "isDefault": false,
+      "category": {
+        "key": "drama-commerce",
+        "label": "短剧编导",
+        "order": 30,
+        "is_exposed": true
+      },
+      "label": "反转打脸",
+      "description": "反转局势，释放打脸爽感",
+      "sortOrder": 50,
+      "isRecommended": true,
+      "recommendationOrder": 200,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_3",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "advertising-brand-proposition",
+      "configVersion": "dd1f2a89e030719580e1a5ed0da3bc0617610c9e3e3790837aee8fd73dbdf6b5",
+      "isDefault": false,
+      "category": {
+        "key": "advertising-tvc",
+        "label": "品牌广告",
+        "order": 40,
+        "is_exposed": true
+      },
+      "label": "商品展示",
+      "description": "呈现细节，展现商品质感",
+      "sortOrder": 10,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "advertising-brand-story",
+      "configVersion": "d26b1e9e05a5398f77eabf954359dc2f1b41ead1f58bea03754f2a03bc24e1fe",
+      "isDefault": false,
+      "category": {
+        "key": "advertising-tvc",
+        "label": "品牌广告",
+        "order": 40,
+        "is_exposed": true
+      },
+      "label": "卖点广告",
+      "description": "聚焦卖点，凸显商品价值",
+      "sortOrder": 30,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "advertising-lifestyle",
+      "configVersion": "831254e4ca79bf454d3062fa5e611262982b9ee69869ed23cfd614acc83fbc3c",
+      "isDefault": false,
+      "category": {
+        "key": "advertising-tvc",
+        "label": "品牌广告",
+        "order": 40,
+        "is_exposed": true
+      },
+      "label": "创意广告",
+      "description": "巧妙构思，演绎商品魅力",
+      "sortOrder": 40,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "advertising-creative-concept",
+      "configVersion": "71bb7964a22e79212ab294833b1c6f0cc4c9fa4d5aca91ccc2e592a5d4952cc5",
+      "isDefault": false,
+      "category": {
+        "key": "advertising-tvc",
+        "label": "品牌广告",
+        "order": 40,
+        "is_exposed": true
+      },
+      "label": "创意概念",
+      "description": "创意表达，强化品牌记忆",
+      "sortOrder": 50,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片 ",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "default-director",
+      "configVersion": "88eddd063d36235b7d11db8eff5aeb19da6edbd850b4dae1d8e8a8972c1c6ddb",
+      "isDefault": true,
+      "category": {
+        "key": "default",
+        "label": "默认",
+        "order": 50,
+        "is_exposed": false
+      },
+      "label": "默认",
+      "description": "传递理念，建立价值认同",
+      "sortOrder": 10,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "short-drama-dialogue",
+      "configVersion": "045b288fe694d8a463ba8c676000989314bc7054164dc0bced15d5a685080dc1",
+      "isDefault": false,
+      "category": {
+        "key": "short-drama",
+        "label": "剧情短片",
+        "order": 60,
+        "is_exposed": true
+      },
+      "label": "对话短剧",
+      "description": "人物冲突，推动剧情发展",
+      "sortOrder": 10,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "short-drama-reversal",
+      "configVersion": "10bc8b487954ddb88b030b37012767ef2964749cf3fd1e4851ab2239fbd9e8ac",
+      "isDefault": false,
+      "category": {
+        "key": "short-drama",
+        "label": "剧情短片",
+        "order": 60,
+        "is_exposed": true
+      },
+      "label": "反转短剧",
+      "description": "剧情反转，制造传播记忆",
+      "sortOrder": 20,
+      "isRecommended": false,
+      "recommendationOrder": 200,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "short-drama-suspense",
+      "configVersion": "7afc4d27dc790a5cd9a73ff8416a9afb5a99ea73f65b7f123736b6051ad03cdd",
+      "isDefault": false,
+      "category": {
+        "key": "short-drama",
+        "label": "剧情短片",
+        "order": 60,
+        "is_exposed": true
+      },
+      "label": "悬念短剧",
+      "description": "设置悬念，持续吸引观看",
+      "sortOrder": 30,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "short-drama-emotional",
+      "configVersion": "50e812db487141618fb70ad50f52566cbd24d25e1bccf021657871b8d773212a",
+      "isDefault": false,
+      "category": {
+        "key": "short-drama",
+        "label": "剧情短片",
+        "order": 60,
+        "is_exposed": true
+      },
+      "label": "情绪短片",
+      "description": "情绪共鸣，强化内容感染",
+      "sortOrder": 40,
+      "isRecommended": true,
+      "recommendationOrder": 200,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": true,
+          "minCount": 1
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_4",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    },
+    {
+      "skillKey": "short-drama-product-placement",
+      "configVersion": "f06cf453f4b85f85f1d23aa821b513ffcc3a7b2932f9afe8c44015a3f5d60457",
+      "isDefault": false,
+      "category": {
+        "key": "short-drama",
+        "label": "剧情短片",
+        "order": 60,
+        "is_exposed": true
+      },
+      "label": "产品植入",
+      "description": "融入剧情，自然传递价值",
+      "sortOrder": 50,
+      "isRecommended": false,
+      "recommendationOrder": 100,
+      "optionGroups": [],
+      "referenceSlots": [
+        {
+          "key": "reference_1",
+          "name": "图片",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 30,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_2",
+          "name": "角色",
+          "mediaTypes": [
+            "image"
+          ],
+          "resourceKind": "asset_or_character",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        },
+        {
+          "key": "reference_3",
+          "name": "声音",
+          "mediaTypes": [
+            "audio"
+          ],
+          "resourceKind": "asset",
+          "maxCount": 10,
+          "required": false,
+          "minCount": 0
+        }
+      ]
+    }
+  ]
+}

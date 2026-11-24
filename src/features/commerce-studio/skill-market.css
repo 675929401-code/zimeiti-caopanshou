@@ -1,0 +1,113 @@
+/* Ordinary member skill and connector workspace. All selectors are scoped to this surface. */
+.cs-market-page,.cs-market-layout,.cs-market-main{height:100%;min-width:0;min-height:0}
+.cs-market-page{position:relative;background:#fcfcfc;color:#171717}
+.cs-market-page button{font:inherit;cursor:pointer;color:inherit}
+.cs-market-page button:disabled{opacity:.48;cursor:default}
+.cs-market-layout{display:flex}
+.cs-market-side{box-sizing:border-box;flex:0 0 248px;background:#f9f9f9;padding:0 6px 12px;border-right:1px solid #e5e7eb;overflow:auto}
+.cs-market-side header,.cs-market-bar,.cs-market-bar nav,.cs-market-search,.cs-market-side button,.cs-market-bar button{display:flex;align-items:center}
+.cs-market-side header{height:52px;padding:0 10px;font-size:17px;font-weight:500;justify-content:space-between}
+.cs-market-side button,.cs-market-bar button,.cs-market-categories button,.cs-market-card button,.cs-market-detail button,.cs-connector-close{background:transparent;border:0}
+.cs-market-side header button{width:32px;justify-content:center}
+.cs-market-side>button{width:100%;height:36px;padding:0 10px;gap:8px;text-align:left;font-size:13px;border-radius:8px;margin:8px 0 0}
+.cs-market-side>button.selected,.cs-market-side>button:hover{background:#ebebeb}
+.cs-market-side h3{margin:20px 10px 4px;color:#727272;font-weight:500;font-size:12px}
+.cs-market-side>button.cs-market-thread{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-top:0}
+.cs-market-side>button.cs-market-scene-back{color:#727272}
+.cs-market-main{flex:1;display:flex;flex-direction:column}
+.cs-market-bar{box-sizing:border-box;height:52px;flex:none;gap:6px;padding:8px 16px}
+.cs-market-bar nav{gap:4px}
+.cs-market-bar button{gap:6px;height:36px;padding:0 10px;justify-content:center;border-radius:8px;white-space:nowrap;font-size:13px}
+.cs-market-bar nav button{color:#717171}
+.cs-market-bar nav button[aria-pressed=true]{color:#171717}
+.cs-market-search{margin-left:auto;width:192px;height:36px;box-sizing:border-box;gap:8px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#727272;padding:0 12px}
+.cs-market-search input{border:0;background:transparent;outline:0;font:inherit;color:#171717;width:100%;min-width:0;font-size:13px}
+.cs-market-bar .cs-market-outline{border:1px solid #e5e7eb;background:white;padding:0 13px}
+.cs-market-page .cs-market-dark,.cs-market-detail .cs-market-actions>button:first-child{border:0;border-radius:8px;background:#272727;color:white;padding-inline:14px}
+.cs-market-scroll{box-sizing:border-box;min-height:0;flex:1;overflow:auto;scrollbar-width:none;padding:8px 16px 24px}
+.cs-market-scroll::-webkit-scrollbar{display:none}
+.cs-market-scroll h2{font-family:inherit;font-size:16px;line-height:24px;font-weight:600;margin:0 0 12px}
+.cs-market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media(min-width:1600px){.cs-market-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:1100px){.cs-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cs-market-card{display:flex;align-items:flex-start;min-width:0;min-height:76px;box-sizing:border-box;border-radius:12px;padding:8px;gap:12px}
+.cs-market-card:hover{background:#f3f3f3}
+.cs-market-layout .cs-market-glyph,.cs-market-detail .cs-market-glyph{display:grid;place-items:center;box-sizing:border-box;width:48px;height:48px;flex:none;border:1px solid #0000000d;border-radius:9px;background:#eaf2ff;color:#0471fe}
+.cs-market-page .tone-0{background:#733ed0;color:#fff}.cs-market-page .tone-2{background:#6347c3;color:#fff}.cs-market-page .tone-3{background:#fff3df;color:#aa6208}.cs-market-page .tone-4{background:#e7f5ee;color:#14784c}.cs-market-page .tone-5{background:#f0ebfa;color:#7842c9}
+.cs-market-card .cs-market-info{display:flex;gap:2px;flex:1;min-width:0;min-height:68px;align-items:flex-start;flex-direction:column;text-align:left;padding:0}
+.cs-market-info>*{display:block;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cs-market-info strong{font-size:14px;font-weight:500;line-height:20px}
+.cs-market-info small,.cs-market-info span{font-size:12px;color:#717171;line-height:16px}
+.cs-market-info small{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.cs-market-info span{line-height:16px}
+.cs-market-card .cs-market-action{display:grid;place-items:center;width:32px;height:32px;flex:none;align-self:center;padding:0;color:#616161;border-radius:8px}
+.cs-market-action:hover{background:white}
+.cs-market-categories{display:flex;gap:8px;margin:16px 0 12px}
+.cs-market-categories button{height:32px;min-width:50px;border-radius:12px;padding:0 12px;font-size:13px;color:#717171}
+.cs-market-categories button[aria-pressed=true]{background:#ebebeb;color:#171717}
+.cs-market-empty{grid-column:1/-1;text-align:center;color:#727272;padding:28px 0;font-size:13px}
+.cs-market-page>p[role=alert]{position:absolute;bottom:12px;left:50%;background:#fff2f0;color:#b42318;padding:8px;z-index:2}
+.cs-studio .cs-market-page dialog.cs-market-detail[open],.cs-market-page .cs-connector-dialog[open]{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:min(672px,calc(100vw - 48px));height:fit-content;max-height:calc(100dvh - 48px);overflow:auto;padding:32px;border:1px solid #e5e7eb;border-radius:12px;background:white;color:#171717}
+.cs-market-detail::backdrop,.cs-connector-dialog::backdrop{background:#0005;backdrop-filter:blur(6px)}
+.cs-market-detail>header{position:absolute;right:16px;top:20px}
+.cs-market-detail>header button,.cs-connector-close{width:36px;height:36px;display:grid;place-items:center;padding:0;color:#727272}
+.cs-market-detail-head{display:flex;gap:20px;min-height:68px;padding-right:34px}
+.cs-market-detail .cs-market-glyph{width:68px;height:68px;border-radius:12px}
+.cs-market-layout img.cs-market-artwork,.cs-market-detail img.cs-market-artwork{display:block;object-fit:contain;border:0;background:transparent}
+.cs-market-detail h2,.cs-custom-connectors h2{font-size:18px;line-height:24px;font-weight:600;margin:0}
+.cs-market-actions{display:flex;align-items:center;gap:8px;margin-top:16px}
+.cs-market-actions button{height:28px;font-size:14px;padding:0 20px;border-radius:8px}
+.cs-market-detail .cs-market-actions>button:first-child{padding-inline:20px;min-width:69px;font-weight:600}.cs-market-detail .cs-market-actions>button:first-child:not(:last-child){min-width:83px}
+.cs-market-detail .cs-market-description{margin:20px 0 0;min-height:24px;line-height:24px;font-size:14px;color:#525252}
+.cs-market-detail .cs-market-version{margin:20px 0 0;line-height:16px;font-size:12px;color:#717171}
+.cs-market-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:20px 0 0;padding:20px 0;border-block:1px solid #eee;text-align:center}
+.cs-market-metrics div{display:flex;flex-direction:column-reverse;gap:4px}
+.cs-market-metrics dd{margin:0;font-size:16px;line-height:24px;font-weight:600}
+.cs-market-metrics dt{font-size:13px;line-height:20px;color:#727272}
+.cs-market-more{margin-top:20px}
+.cs-market-more h3{margin:0;font-size:18px;line-height:28px}
+.cs-market-more p{font-size:14px;line-height:20px;background:#f9f9f9;border-radius:10px;margin:12px 0 0;padding:16px;color:#727272}
+.cs-connector-switch{width:30px;height:16px;border-radius:10px;background:#ccc;padding:2px}
+.cs-connector-switch:before{content:'';display:block;width:12px;height:12px;background:white;border-radius:50%}
+.cs-connector-close{position:absolute;top:16px;right:16px}
+.cs-market-page .cs-custom-connectors[open]{height:min(800px,calc(100dvh - 48px))}
+.cs-custom-connectors>p,.cs-service-dialog p{font-size:14px;color:#717171;line-height:24px}
+.cs-connector-tools,.cs-connector-form footer{display:flex;align-items:center;gap:8px}
+.cs-connector-tools input{flex:1}
+.cs-connector-tools input,.cs-connector-form input{min-width:0;height:36px;padding:0 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;color:#171717;font-size:14px}
+.cs-connector-tools button,.cs-connector-form button,.cs-service-dialog button.cs-market-dark{display:inline-flex;align-items:center;height:36px;border:1px solid #e5e7eb;border-radius:8px;padding:0 12px}
+.cs-connector-form,.cs-connector-record{display:grid;gap:12px;margin-top:16px;padding:16px;background:#f9f9f9;border-radius:10px}
+.cs-connector-form label{display:grid;gap:6px;font-size:13px}.cs-connector-form footer{justify-content:flex-end}
+.cs-market-page .cs-service-dialog[open]{text-align:center;padding:44px 32px;min-height:min(370px,calc(100dvh - 48px))}
+.cs-connector-glyph,.cs-connector-identities img{flex:none;border:1px solid #0000000d;border-radius:9px;object-fit:contain;background:#fff}
+.cs-connector-identities{display:flex;align-items:center;justify-content:center;gap:20px;color:#777}
+.cs-connector-identities img{width:68px;height:68px}
+.cs-service-dialog h2{font-size:24px;line-height:32px;margin:20px 0}
+.cs-service-dialog p{margin:0;min-height:72px}
+.cs-service-dialog .cs-market-dark{margin-top:24px;min-width:68px;justify-content:center}
+.cs-service-dialog h2{margin:20px 0}
+.cs-market-page .cs-market-side header{padding-right:4px}
+.cs-market-page .cs-market-side header button{width:36px;height:36px;padding:0;justify-content:center}
+.cs-market-side>button+button:not(.cs-market-thread){margin-top:4px}
+.cs-market-page .cs-market-bar nav{gap:16px}
+.cs-market-page .cs-market-bar nav button:first-child{width:58px}
+.cs-market-page .cs-market-bar nav button:nth-child(2){width:74px}
+.cs-market-page .cs-market-bar button[form=cs-custom-connector-launch]{min-width:136px}
+.cs-market-page .cs-market-search input{height:20px;min-height:0;padding:0;border:0;box-shadow:none;line-height:20px}
+.cs-custom-connectors>h2+p{margin:4px 0 20px}
+.cs-custom-connectors .cs-connector-tools label{display:flex;align-items:center;gap:8px;flex:1;min-width:0;height:40px;padding:0 12px;border:1px solid #ededed;border-radius:9px;color:#727272}
+.cs-custom-connectors .cs-connector-tools input{width:100%;height:20px;min-height:0;padding:0;border:0;box-shadow:none;line-height:20px}
+.cs-custom-connectors .cs-connector-tools button{width:78px;height:40px;justify-content:center;gap:6px;color:#171717}
+.cs-custom-connectors .cs-connector-form{margin-top:20px;border:1px solid #ededed}
+.cs-custom-connectors .cs-connector-form input{width:100%;height:38px}
+.cs-custom-connectors .cs-connector-form footer button{justify-content:center}
+.cs-custom-connectors .cs-connector-form footer button:first-child{width:52px;border:0;background:transparent}
+.cs-custom-connectors .cs-connector-form footer button:last-child{width:61px}
+.cs-custom-connectors .cs-market-empty{padding-top:64px}
+.cs-market-card:has(.cs-connector-switch) .cs-market-info{align-self:start;height:42px}
+.cs-market-card:has(.cs-connector-switch) .cs-market-action{width:36px;height:20px;min-height:0;padding:0}
+.cs-connector-switch{width:36px;height:20px}
+.cs-connector-switch:before{width:16px;height:16px}
+.cs-market-page .cs-market-bar .cs-market-dark:not([form]){min-width:107px}
+.cs-market-card:has(.cs-connector-switch) .cs-market-action{align-self:start;margin-top:14px}
+.cs-service-dialog .cs-market-dark{margin-top:32px}

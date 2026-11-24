@@ -107,6 +107,8 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     '.next/**',
     '.next-*/**',
+    // Vendored minified PDF library: third-party bytes, not hand-maintained source.
+    'src/commerce/vendor/pdf-lib/**',
     'out/**',
     'build/**',
     'next-env.d.ts',

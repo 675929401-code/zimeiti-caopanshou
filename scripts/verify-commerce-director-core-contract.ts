@@ -42,17 +42,24 @@ async function main(){
   await fs.writeFile(path.join(fixture,'assets',longAudioId),longAudioBytes);
 
   const cards=catalog.baselineDirectorCatalog();
-  assert.equal(cards.length,19);
-  assert.equal(new Set(cards.map(card=>card.key)).size,19);
+  assert.equal(cards.length,28);
+  assert.equal(new Set(cards.map(card=>card.key)).size,28);
   assert.equal(cards.filter(card=>card.default).length,1);
   assert.ok(cards.every(card=>card.slots.length>0&&new Set(card.slots.map(slot=>slot.key)).size===card.slots.length));
   assert.ok(cards.every(card=>card.slots.every(slot=>Number.isInteger(slot.min)&&Number.isInteger(slot.max)&&slot.min>=0&&slot.max>=slot.min&&slot.max<=directorSchema.DIRECTOR_REFERENCE_LIMIT&&slot.kinds.length>0)));
-  assert.ok(cards.every(card=>card.slots.reduce((sum,slot)=>sum+slot.max,0)<=directorSchema.DIRECTOR_REFERENCE_LIMIT));
+  assert.deepEqual(directorSchema.DIRECTOR_MEDIA_LIMITS,{image:30,video:10,audio:10});
+  assert.ok(cards.every(card=>card.slots.reduce((sum,slot)=>sum+slot.min,0)<=directorSchema.DIRECTOR_REFERENCE_LIMIT));
   for(const card of cards)for(const slot of card.slots)if(slot.label.trim()==='声音')assert.deepEqual(slot.kinds,['audio'],`${card.key} 的声音槽必须只接收音频`);
   const templates=directorPrompts.directorTemplates('共同事实规则。');
-  assert.equal(templates.length,19);
-  assert.equal(new Set(templates.map(template=>template.id)).size,19);
-  assert.ok(templates.every(template=>template.version===8&&template.content.includes('director-script/v2')&&template.content.includes('本编导skillKey为 ')&&template.content.includes('【common:platform-facts】')&&template.content.includes('【category:commerce-video-director】')&&template.content.includes('【skill:')&&template.content.includes('【runtime:director-script-v2】')));
+  assert.equal(templates.length,28);
+  assert.equal(new Set(templates.map(template=>template.id)).size,28);
+  for (const template of templates) {
+    assert.equal(template.version, template.id === 'director.face-slap-reversal' ? 1 : ['director.ecommerce-scene-seeding','director.advertising-lifestyle','director.advertising-brand-story','director.advertising-brand-proposition'].includes(template.id) ? 9 : 8);
+    for (const marker of ['director-script/v2', '本编导skillKey为 ', '【common:platform-facts】', '【category:commerce-video-director】', '【skill:', '【runtime:director-script-v2】']) {
+      assert.ok(template.content.includes(marker), `${template.id} 缺少 ${marker}`);
+    }
+  }
+  assert.match(templates.find(template => template.id === 'director.ecommerce-scene-seeding')!.content, /不把创作演示冒充用户真实体验/);
 
   const settings={skillKey:'ecommerce-spoken-selling',selections:{},spokenLanguage:'中文',durationSeconds:15,generateAudio:true};
   const selectedDirectorCard=cards.find(card=>card.key===settings.skillKey);
@@ -66,12 +73,54 @@ async function main(){
   } as const;
   const parsed=output.parseDirectorOutput(JSON.stringify(reply),settings,references,'director-script/v2');
   assert.equal(parsed.schema,'director-script/v2');
+  const withInvisibleKey=JSON.stringify(reply).replace('"foley":','"fo\\u200bley":');
+  assert.deepEqual(output.parseDirectorOutput(withInvisibleKey,settings,references,'director-script/v2'),parsed);
+  const conflictingKey=JSON.stringify(reply).replace('"foley":','"fo\\u200bley":"other","foley":');
+  assert.throws(()=>output.parseDirectorOutput(conflictingKey,settings,references,'director-script/v2'),/字段不完整或含未知字段/);
+  const source=JSON.stringify(reply);
+  const nextShot=source.indexOf('},{"id":"镜头2');
+  const lastShot=source.lastIndexOf('}],"conversionClose"');
+  assert.ok(nextShot>0 && lastShot>0);
+  for(const serialized of [
+    JSON.stringify({...reply,referenceNumbersNote:null,applicationRequired:true}),
+    JSON.stringify({...reply,preserve:reply.script.preserve,forbid:reply.script.forbid})+'}',
+    source.replace('"music":','"cameraNote":"","music":'),
+    JSON.stringify({...reply,revisionTarget:null})+'}',
+    source.slice(0,nextShot)+',"' +source.slice(nextShot),
+    source.slice(0,lastShot)+'}'+source.slice(lastShot),
+    source.replace('}],"conversionClose"', '}]。"conversionClose"'),
+    source.replace('"music":','"speechLanguage":"中文","music":'),
+    source.replace('"music":','"referenceNumbersNote":"","music":'),
+    source.replace('"source":"reference"','"source":"参考素材"'),
+  ])assert.deepEqual(output.parseDirectorOutput(serialized,settings,references,'director-script/v2'),parsed);
+  for(const invalid of [source.slice(0,-2),source+'{}',JSON.stringify({...reply,revisionTarget:1}),JSON.stringify({...reply,applicationRequired:false}),source.replace('"music":','"speechLanguage":"英文","music":'),JSON.stringify({...reply,referenceNumbersNote:'覆盖参考图编号'})]){
+    assert.throws(()=>output.parseDirectorOutput(invalid,settings,references,'director-script/v2'));
+  }
   const visibleOutput=output.directorGenerationText(parsed,references);
+  for(const invalid of [JSON.stringify({...reply,preserve:['与原文冲突']}),source.replace('"music":','"cameraNote":"改换场景","music":')]){
+    assert.throws(()=>output.parseDirectorOutput(invalid,settings,references,'director-script/v2'));
+  }
   assert.deepEqual([...visibleOutput.matchAll(/^##\s+(.+)$/gmu)].map(match=>match[1]),['剧情梗概','素材与职责','主体与全片设定','镜头 / 时间轴','始终禁止']);
+  const memberScript=output.directorDisplayText(parsed,references,true);
+  assert.deepEqual([...memberScript.matchAll(/^## (.+)$/gmu)].map(m=>m[1]),['剧情概述','素材与主体','场景与视觉设定','镜头/时间轴','保持与禁止']);
+  for(const shot of parsed.script!.shots){
+    assert.ok(memberScript.includes(shot.visual)&&memberScript.includes(shot.camera));
+    assert.ok(memberScript.includes(shot.speech)&&memberScript.includes(shot.music));
+  }
+  assert.match(memberScript,/\[镜头1｜0-5s｜/u);
   assert.match(visibleOutput,/@图片1/);
   assert.match(visibleOutput,/\(轻柔背景音乐\)/);
   assert.match(visibleOutput,/<室内轻微环境声、拿起包装的轻响>/);
   assert.match(visibleOutput,/\{人物A：先看它的包装和使用方式。\}/);
+  const {compileCommercePrompt}=await import('../src/commerce/server/prompt-compiler');
+  const longIntroduction='剧情摘要'.repeat(200);
+  const lockedShot='镜头1｜确认台词、四秒时长和参考图。'.repeat(22);
+  const lockedRequest='## 剧情梗概\n'+longIntroduction+'\n## 素材与职责\n图1为商品。\n## 镜头 / 时间轴\n'+lockedShot+'\n## 始终禁止\n保留橙色。';
+  const compactInput={systemPrompt:'展示商品',materialBindings:'图1：商品',knowledge:[],configuredFields:{duration:4},userRequest:lockedRequest};
+  const compact=compileCommercePrompt({...compactInput,shortVideoModel:{maxCharacters:800,confirmedDirectorScript:true}});
+  assert.ok(Array.from(compact).length<=800&&compact.includes(lockedShot)&&compact.includes('保留橙色'));
+  assert.throws(()=>compileCommercePrompt({...compactInput,shortVideoModel:{maxCharacters:800,confirmedDirectorScript:false}}),/未创建付费任务/);
+  assert.ok(compileCommercePrompt(compactInput).includes(longIntroduction));
   const missingFact=structuredClone(reply) as any;delete missingFact.script.factLedger;
   assert.throws(()=>output.parseDirectorOutput(JSON.stringify(missingFact),settings,references,'director-script/v2'),/字段不完整/);
   const badShot=structuredClone(reply) as any;badShot.script.shots[0].id='第一镜';
@@ -168,15 +217,14 @@ async function main(){
     globalThis.fetch=originalFetch;
   }
 
-  const promptSource=await fs.readFile(new URL('../src/commerce/server/prompt-compiler.ts',import.meta.url),'utf8');
   const workspaceSource=await fs.readFile(new URL('../src/commerce/components/commerce-agent/workspace.tsx',import.meta.url),'utf8');
-  const compilerReturn=promptSource.slice(promptSource.indexOf('return ['));
+  const compilerReturn=compileCommercePrompt({...compactInput,knowledge:[{name:'测试知识',content:'已确认的商品颜色。'}] as Parameters<typeof compileCommercePrompt>[0]['knowledge'],currentScript:'上一版已确认脚本',verifiedHistory:'已验证的对话内容'});
   assert.ok(['平台事实与安全规则（不可覆盖）','当前卡片系统提示词','当前发布知识','素材编号与职责','管理员配置的输入字段','用户本轮要求','已验证对话历史','当前脚本版本','输出合同','交付前质检'].every((label,index,labels)=>compilerReturn.indexOf(label)>=0&&(index===0||compilerReturn.indexOf(label)>compilerReturn.indexOf(labels[index-1]))));
   assert.match(workspaceSource,/matchingDirectorApplication/);
   assert.match(workspaceSource,/directorSpec=\{directorSpec\}/);
   assert.match(await fs.readFile(new URL('../src/commerce/components/commerce-agent/director-conversation.tsx',import.meta.url),'utf8'),/ca-director-configured-fields/);
   assert.doesNotMatch(workspaceSource,/directorName=\{director\}/);
-  console.log(JSON.stringify({passed:64,networkCalls:0,paidCalls:0,catalog:{directors:cards.length,validatedCards:cards.length,referenceLimit:directorSchema.DIRECTOR_REFERENCE_LIMIT},protocol:'director-script/v2',fixture,checks:['19-card-catalog','unique-card-keys','single-default','slot-keys','slot-bounds','card-total-reference-limit','19-template-count','unique-template-ids','v2-template-contract','19-card-slot-and-output-matrix','v2-parse','facts-projection','characters-projection','product-projection','conversion-projection','missing-fact-rejected','shot-title-rejected','timeline-gap-rejected','empty-audio-plan-rejected','legacy-v1-readable','v1-not-accepted-as-v2','required-slot-rejected','wrong-role-rejected','long-audio-rejected-before-quote','director-quote-with-audio','hidden-agent-model','first-turn-no-base','opaque-audio-rule-compiled','source-job-synchronized','ready-script','application-v2','source-content-hash','source-configuration-hash','source-role-frozen','downstream-audio-role-mapped','video-quote','video-source-snapshot','video-config-hash','video-role-binding','public-source-snapshot-hidden','revision-current-script-block','revision-message-id','revision-content-hash','revision-preserve-rule','revision-full-script','tamper-rejected','shared-no-release-baseline-catalog','shared-no-release-find-director','shared-no-release-baseline-routes','shared-no-release-legacy-route-ignored','shared-no-release-zero-network','compiler-order','director-matcher','dynamic-card-prop','configured-fields-ui','no-provider-dispatch']}));
+  console.log(JSON.stringify({passed:64,networkCalls:0,paidCalls:0,catalog:{directors:cards.length,validatedCards:cards.length,referenceLimit:directorSchema.DIRECTOR_REFERENCE_LIMIT},protocol:'director-script/v2',fixture,checks:['28-card-catalog','unique-card-keys','single-default','slot-keys','slot-bounds','card-total-reference-limit','28-template-count','unique-template-ids','v2-template-contract','28-card-slot-and-output-matrix','v2-parse','facts-projection','characters-projection','product-projection','conversion-projection','missing-fact-rejected','shot-title-rejected','timeline-gap-rejected','empty-audio-plan-rejected','legacy-v1-readable','v1-not-accepted-as-v2','required-slot-rejected','wrong-role-rejected','long-audio-rejected-before-quote','director-quote-with-audio','hidden-agent-model','first-turn-no-base','opaque-audio-rule-compiled','source-job-synchronized','ready-script','application-v2','source-content-hash','source-configuration-hash','source-role-frozen','downstream-audio-role-mapped','video-quote','video-source-snapshot','video-config-hash','video-role-binding','public-source-snapshot-hidden','revision-current-script-block','revision-message-id','revision-content-hash','revision-preserve-rule','revision-full-script','tamper-rejected','shared-no-release-baseline-catalog','shared-no-release-find-director','shared-no-release-baseline-routes','shared-no-release-legacy-route-ignored','shared-no-release-zero-network','compiler-order','director-matcher','dynamic-card-prop','configured-fields-ui','no-provider-dispatch']}));
 }
 
 main().catch(error=>{console.error(error);process.exitCode=1;});

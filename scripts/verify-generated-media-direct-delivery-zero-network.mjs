@@ -129,13 +129,13 @@ const png = await sharp({ create: { width: 1024, height: 1024, channels: 3, back
 const inlineDataUrl = `data:image/png;base64,${png.toString('base64')}`;
 const dimensions = load('src/lib/image-dimensions.ts', { '@/lib/safe-fetch': { safeFetch() { throw Error('Network forbidden'); } } });
 const uploadSecurity = load('src/lib/file-upload-security.ts', { 'node:crypto': crypto });
-const outputContract = load('src/lib/image-output-contract.ts');
+const outputContract = load('src/lib/image-output-contract.ts',{'./toapis-image-contract':load('src/lib/toapis-image-contract.ts')});
 function inlineCallback() {
   const module = { exports: {} };
   const code = `${prepareBytesText}\nmodule.exports = (${inlineCallbackText});`;
   runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, {
     module, Buffer, candidates: [{ id: 'fixture-model', provider: 'fixture', api_endpoint: 'https://provider.invalid/v1/images/generations' }],
-    effectiveMode: 'local', effectiveResolution: '1K', ratio: '1:1', costPrice: 0.1, workflowConfig: {}, legacyAcceptedAnnotation,
+    references: [], effectiveMode: 'local', effectiveResolution: '1K', ratio: '1:1', costPrice: 0.1, workflowConfig: {}, legacyAcceptedAnnotation,
     resolveImageResolutionPrice: () => 0.1, ImageExactlyOnceError: exact.ImageExactlyOnceError, ImageRequestRejectedError: exact.ImageRequestRejectedError,
     decodeInlineImage: ephemeral.decodeInlineImage, createImageEphemeralDelivery: ephemeral.createImageEphemeralDelivery,
     validateUploadBuffer: uploadSecurity.validateUploadBuffer, parseImageDimensions: dimensions.parseImageDimensions,

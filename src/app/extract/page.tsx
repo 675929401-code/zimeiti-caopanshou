@@ -229,10 +229,9 @@ function RuntimeQuoteCard({ gate }: { gate: RuntimeGate }) {
       <button type="button" className="shrink-0 underline" onClick={gate.onRefresh}>重新读取</button>
     </div>
   );
-  const priceLabel = publicRuntimePriceLabel(gate.quote);
   return (
     <p role="status" className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--accent)]/40 px-3 py-2 text-xs text-[var(--muted-foreground)]">
-      <strong className="text-[var(--foreground)]">通道已配置</strong> · 计费：<strong className="text-[var(--foreground)]">{priceLabel}</strong>
+      <strong className="text-[var(--foreground)]">通道已配置</strong>
     </p>
   );
 }
@@ -244,7 +243,7 @@ function confirmLoadedRetry(draft: ExtractionRetryDraft | null, kind: 'video' | 
     : draft.input.requestKind === kind;
   if (!matches) return true;
   const price = publicRuntimePriceLabel(gate.quote);
-  return window.confirm(`确认按当前公开价格 ${price} 创建一个全新的请求？`);
+  return window.confirm(`确认按本次价格 ${price} 创建一个全新的请求？`);
 }
 
 interface CreatorBatchApiResponse {

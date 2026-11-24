@@ -19,7 +19,9 @@ export const maxDuration = 300;
 export async function GET(request: Request) {
   try {
     const user = requireIdentity(request);
-    const values = jobs(user.id);
+    const values = jobs(user.id).filter(({ input }) =>
+      input.purpose !== 'commerce-canary' && input.purpose !== 'commerce-card-canary'
+    );
     return json({ jobs: values.map(publicJob) });
   } catch (error) {
     return errorResponse(error);

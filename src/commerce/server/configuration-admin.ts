@@ -4,7 +4,7 @@ import { invalidatePublishedCommerceConfiguration, manifestHash, primePublishedC
 import type { CommerceReleaseManifest } from '../shared/configuration-types';
 import { commerceModelAcceptanceIndex, commerceModelAcceptanceKey } from './model-acceptance';
 import { cardAcceptanceKey, cardContractHash, commerceCardAcceptanceIndex } from './card-acceptance';
-import { DIRECTOR_REFERENCE_LIMIT } from './director-conversation-schema';
+import { DIRECTOR_REFERENCE_LIMIT, DIRECTOR_MEDIA_LIMITS } from './director-conversation-schema';
 import { DEPTH_MODEL_CAPABILITY_REQUIREMENTS, DEPTH_PURPOSE } from './depth-video-clone-schema';
 import {curatedMainCatalogExecutionReadiness,isCuratedConfigurationSelectable,usesCuratedMainCatalogDirectExecution} from './commerce-curated-model-profiles';
 import {createHash} from 'node:crypto';
@@ -78,7 +78,22 @@ function materialForSlot(slot:Row):Row{
 }
 function synthesizedCardInput(card:Row,maximum=false,standard=false):CardContractInput{
   const materials:Record<string,unknown[]>={},fields:Record<string,unknown>={};
-  for(const value of array(card.material_slots)){const slot=object(value),id=String(slot.id||''),min=Number(slot.minCount),max=Number(slot.maxCount);const count=maximum?max:standard&&max>0?Math.max(min,1):min;materials[id]=Array.from({length:count},()=>materialForSlot(slot));}
+  const slots=array(card.material_slots).map(object);
+  const isDirector=card.executor_type==='director',counts:Record<string,number>={};
+  let total=0;
+  function add(slot:Row){
+    const candidates=array(slot.mediaTypes).map(String);
+    const kind=candidates.find(k=>!isDirector||total<DIRECTOR_REFERENCE_LIMIT&&(counts[k]||0)<(DIRECTOR_MEDIA_LIMITS[k as keyof typeof DIRECTOR_MEDIA_LIMITS]??DIRECTOR_REFERENCE_LIMIT));
+    if(!kind)return false;
+    materials[String(slot.id)].push({...materialForSlot(slot),mediaType:kind});total++;counts[kind]=(counts[kind]||0)+1;return true;
+  }
+  for(const slot of slots)materials[String(slot.id)]=[];
+  const ordered=[...slots].sort((a,b)=>array(a.mediaTypes).length-array(b.mediaTypes).length);
+  for(const slot of ordered)for(let i=0;i<Number(slot.minCount);i++)if(!add(slot))throw Error('必填素材超过编导可接受的数量');
+  for(const slot of ordered){
+    const target=maximum?Number(slot.maxCount):standard?Math.min(1,Number(slot.maxCount)):0;
+    while(materials[String(slot.id)].length<target&&add(slot)){}
+  }
   for(const value of array(card.input_fields)){const field=object(value);fields[String(field.id||'')]=valueForField(field,maximum);}
   return {materials,fields};
 }
@@ -89,6 +104,11 @@ export function validateCommerceCardContractInput(card:Row,raw:unknown):string[]
   for(const key of Object.keys(materials))if(!slotIds.has(key))throw Error(`未知素材槽 ${key}`);
   for(const key of Object.keys(fields))if(!fieldIds.has(key))throw Error(`未知输入字段 ${key}`);
   for(const slot of slots){const id=String(slot.id||''),items=array(materials[id]),min=Number(slot.minCount),max=Number(slot.maxCount),mediaTypes=array(slot.mediaTypes).map(String),maxBytes=slot.maxFileBytes===undefined?undefined:Number(slot.maxFileBytes),minDuration=slot.minDurationSeconds===undefined?undefined:Number(slot.minDurationSeconds),maxDuration=slot.maxDurationSeconds===undefined?undefined:Number(slot.maxDurationSeconds);if(items.length<min||items.length>max)throw Error(`素材槽 ${id} 数量必须为 ${min}-${max}`);for(const itemValue of items){const item=object(itemValue),mediaType=String(item.mediaType||'');if(!mediaTypes.includes(mediaType))throw Error(`素材槽 ${id} 不接受 ${mediaType||'未知'} 类型`);const bytes=item.bytes===undefined?undefined:Number(item.bytes);if(bytes!==undefined&&(!Number.isFinite(bytes)||bytes<0||maxBytes!==undefined&&bytes>maxBytes))throw Error(`素材槽 ${id} 文件大小超限`);const duration=item.durationSeconds===undefined?undefined:Number(item.durationSeconds);if(duration!==undefined&&(!Number.isFinite(duration)||duration<0||minDuration!==undefined&&duration<minDuration||maxDuration!==undefined&&duration>maxDuration))throw Error(`素材槽 ${id} 时长超限`);}assertions.push(`slot:${id}:accepted`);}
+  if(card.executor_type==='director'){
+    const all=Object.values(materials).flatMap(array);
+    if(all.length>DIRECTOR_REFERENCE_LIMIT)throw Error('编导参考素材总数超限');
+    for(const [kind,limit] of Object.entries(DIRECTOR_MEDIA_LIMITS))if(all.filter(item=>object(item).mediaType===kind).length>limit)throw Error('编导 '+kind+' 素材数量超限');
+  }
   for(const field of inputFields){const id=String(field.id||''),type=String(field.type||''),value=fields[id],validation=object(field.validation);if(field.required===true&&(value===undefined||value===null||typeof value==='string'&&!value.trim()))throw Error(`输入字段 ${id} 必填`);if(value===undefined||value===null||value===''){assertions.push(`field:${id}:optional`);continue;}if(type==='number'){const number=Number(value);if(!Number.isFinite(number)||validation.min!==undefined&&number<Number(validation.min)||validation.max!==undefined&&number>Number(validation.max))throw Error(`输入字段 ${id} 数值无效`);}else if(type==='select'){if(!array(field.options).includes(value))throw Error(`输入字段 ${id} 选项无效`);}else if(type==='boolean'){if(typeof value!=='boolean')throw Error(`输入字段 ${id} 必须为布尔值`);}else{if(typeof value!=='string')throw Error(`输入字段 ${id} 必须为文本`);if(validation.maxLength!==undefined&&value.length>Number(validation.maxLength))throw Error(`输入字段 ${id} 文本过长`);if(typeof validation.pattern==='string'){let pattern:RegExp;try{pattern=new RegExp(validation.pattern);}catch{throw Error(`输入字段 ${id} 正则无效`);}if(!pattern.test(value))throw Error(`输入字段 ${id} 格式无效`);}}assertions.push(`field:${id}:accepted`);}
   return assertions;
 }
@@ -123,7 +143,7 @@ export async function runCardContractTests(actorId:string,versionId:string){
   const result=evaluateCommerceCardContractTests(selected.data);const prior=object(selected.data.validation_result),validation={...prior,contractTestsPassed:result.ok,contractTestMode:result.mode,contractTestIssues:result.issues,contractTestedAt:result.checkedAt,contractTestedBy:actorId};const updated=await db.from('commerce_card_versions').update({test_cases:result.testCases,validation_result:validation,status:result.ok?'pending_validation':'draft'}).eq('id',versionId).eq('status',status).select('*').maybeSingle();if(updated.error||!updated.data)throw Error('卡片版本在测试期间已变化，请重新读取');return {version:updated.data,result};
 }
 function modelRequirementIssues(label:string,model:Awaited<ReturnType<typeof models>>[number]|undefined,migrationBaseline:boolean,accepted:boolean,requirements:Record<string,unknown>={},warnings:string[]=[]):string[]{
-  if(!model)return [`${label}不可用`];const issues:string[]=[];
+  if(!model)return [`${label}不可用`];if(model.billingUnit==='token')return [`${label}按实际 Token 用量结算，当前带货工作区仅支持按次或按秒`];const issues:string[]=[];
   if(model.capabilities.available===false||model.capabilities.executionSupported===false)issues.push(`${label}生成链路未就绪`);
   const priceIssues:string[]=[];
   if(!Number.isFinite(model.publicPrice)||model.publicPrice<0||model.publicPrice===0&&model.capabilities.explicitlyFree!==true)priceIssues.push(`${label}售价不完整`);
@@ -161,14 +181,15 @@ export async function saveCardDraft(actorId: string, raw: Row) {
   for (const value of slots) {
     const slot = object(value); const min = Number(slot.minCount); const max = Number(slot.maxCount);
     const slotId=clean(slot.id,80);const mediaTypes=array(slot.mediaTypes).map(String);const maxBytes=slot.maxFileBytes===undefined?undefined:Number(slot.maxFileBytes);const minDuration=slot.minDurationSeconds===undefined?undefined:Number(slot.minDurationSeconds);const maxDuration=slot.maxDurationSeconds===undefined?undefined:Number(slot.maxDurationSeconds);
-    if (!FORM_KEY.test(slotId) || slotIds.has(slotId) || !clean(slot.label, 80) || !clean(slot.responsibility, 300) || !mediaTypes.length || mediaTypes.some((kind)=>!MEDIA_TYPES.has(kind)) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < min || max > 20 || maxBytes!==undefined&&(!Number.isInteger(maxBytes)||maxBytes<1024||maxBytes>500_000_000) || minDuration!==undefined&&(!Number.isFinite(minDuration)||minDuration<0) || maxDuration!==undefined&&(!Number.isFinite(maxDuration)||maxDuration<(minDuration||0)||maxDuration>3600)) throw Error('素材槽配置无效');
+    const slotLimit=raw.executorType==='director'?Math.min(DIRECTOR_REFERENCE_LIMIT,[...new Set(mediaTypes)].reduce((sum,k)=>sum+(DIRECTOR_MEDIA_LIMITS[k as keyof typeof DIRECTOR_MEDIA_LIMITS]??DIRECTOR_REFERENCE_LIMIT),0)):20;
+    if (!FORM_KEY.test(slotId) || slotIds.has(slotId) || !clean(slot.label, 80) || !clean(slot.responsibility, 300) || !mediaTypes.length || mediaTypes.some((kind)=>!MEDIA_TYPES.has(kind)) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < min || max > slotLimit || maxBytes!==undefined&&(!Number.isInteger(maxBytes)||maxBytes<1024||maxBytes>500_000_000) || minDuration!==undefined&&(!Number.isFinite(minDuration)||minDuration<0) || maxDuration!==undefined&&(!Number.isFinite(maxDuration)||maxDuration<(minDuration||0)||maxDuration>3600)) throw Error('素材槽配置无效');
     slotIds.add(slotId);
   }
   const fields=array(raw.inputFields);const fieldIds=new Set<string>();
   for(const value of fields){const field=object(value),fieldId=clean(field.id,80),type=clean(field.type,20),validation=object(field.validation);if(!FORM_KEY.test(fieldId)||fieldIds.has(fieldId)||!FIELD_TYPES.has(type)||!clean(field.title,100)||typeof field.required!=='boolean')throw Error('输入字段配置无效');if(type==='select'&&(!Array.isArray(field.options)||field.options.length<1||field.options.length>100))throw Error(`选择字段 ${fieldId} 缺少合法选项`);if(typeof validation.pattern==='string'&&(validation.pattern.length>120||/[\\][1-9]|\(\?[=!<]/.test(validation.pattern)))throw Error(`输入字段 ${fieldId} 的正则校验超出安全范围`);fieldIds.add(fieldId);}
   const executorType = clean(raw.executorType, 40);
   if (!EXECUTORS.has(executorType)) throw Error('执行器必须选择平台已审核的能力模板');
-  if(executorType==='director'&&slots.reduce<number>((sum,value)=>sum+Number(object(value).maxCount||0),0)>DIRECTOR_REFERENCE_LIMIT)throw Error(`编导参考素材总上限不能超过 ${DIRECTOR_REFERENCE_LIMIT} 项`);
+  if(executorType==='director')synthesizedCardInput({executor_type:executorType,material_slots:slots});
   rejectExecutableConfiguration({inputFields:fields,outputContract:object(raw.outputContract),qualityRules:object(raw.qualityRules),modelPolicy:object(raw.modelPolicy),videoDefaults:object(raw.videoDefaults)});
   const db = getSupabaseAdminClient();
   let { data: card } = await db.from('commerce_cards').select('*').eq('stable_key', stableKey).maybeSingle();
@@ -201,6 +222,18 @@ export async function savePromptDraft(actorId: string, raw: Row) {
   if (result.error) throw Error(`保存提示词版本失败：${result.error.message}`); return result.data;
 }
 
+export async function bindDirectorPromptDraft(actorId: string, cardVersionId: string, promptVersionId: string) {
+  if (!UUID.test(cardVersionId) || !UUID.test(promptVersionId)) throw Error('编导卡片或提示词版本无效');
+  const configuration = await primePublishedCommerceConfiguration({ force: true, required: true });
+  const card = configuration?.cards.find(item => item.id === cardVersionId && item.executorType === 'director');
+  if (!card) throw Error('当前编导卡片已变化，请重新读取');
+  const currentPrompt = configuration?.prompts.find(item => card.promptVersionId ? item.id === card.promptVersionId : item.promptKey === `director.${card.stableKey}`);
+  const expectedKey = currentPrompt?.promptKey ?? `director.${card.stableKey}`;
+  const selected = await getSupabaseAdminClient().from('commerce_prompt_versions').select('id,prompt_key,status').eq('id', promptVersionId).maybeSingle();
+  if (selected.error || selected.data?.status !== 'draft' || selected.data.prompt_key !== expectedKey) throw Error('请选择此编导的提示词草稿');
+  return saveCardDraft(actorId, { ...card, promptVersionId, changeNote: '更新编导绑定的提示词版本' });
+}
+
 export async function saveKnowledgeDraft(actorId: string, raw: Row) {
   const knowledgeKey = clean(raw.knowledgeKey, 120); const content = clean(raw.content, 100_000); const name = clean(raw.name, 160);
   if (!knowledgeKey || !name || !content) throw Error('知识标识、名称和正文必填');
@@ -220,6 +253,39 @@ export async function saveRouteDraft(actorId: string, raw: Row) {
   const capabilityRequirements={...object(raw.capabilityRequirements),...fixedOperationRequirements(operationId)};rejectExecutableConfiguration(capabilityRequirements,'能力要求');
   const result = await getSupabaseAdminClient().from('commerce_operation_routes').insert({ operation_id: operationId, version, label: clean(raw.label || operationId, 200), model_kind: kind, primary_model_id: primaryModelId, fallback_model_ids: fallbackModelIds, capability_requirements: capabilityRequirements, user_selectable: raw.userSelectable === true, status: 'draft', change_note: clean(raw.changeNote, 500), created_by: actorId }).select('*').single();
   if (result.error) throw Error(`保存功能路由失败：${result.error.message}`); return result.data;
+}
+
+export async function saveRouteDraftBatch(actorId: string, raw: Row) {
+  const operationIds = [...new Set(array(raw.operationIds).map((value) => clean(value, 160)).filter(Boolean))];
+  const primaryModelId = clean(raw.primaryModelId, 200);
+  if (!operationIds.length) throw Error('请至少选择一个功能');
+  if (operationIds.length > 50) throw Error('单次批量最多 50 个功能');
+  if (!primaryModelId) throw Error('主模型必填');
+  const db = getSupabaseAdminClient();
+  const existing = await db.from('commerce_operation_routes').select('*').in('operation_id', operationIds).order('version', { ascending: false });
+  if (existing.error) throw Error(`读取现有路由失败：${existing.error.message}`);
+  const latestByOperation = new Map<string, Row>();
+  for (const row of existing.data || []) { const key = String(row.operation_id || ''); if (key && !latestByOperation.has(key)) latestByOperation.set(key, row); }
+  const results: { operationId: string; version?: number; error?: string }[] = [];
+  for (const operationId of operationIds) {
+    const prior = latestByOperation.get(operationId);
+    try {
+      const saved = await saveRouteDraft(actorId, {
+        operationId,
+        label: prior ? String(prior.label || operationId) : operationId,
+        modelKind: prior ? String(prior.model_kind || 'agent') : 'agent',
+        primaryModelId,
+        fallbackModelIds: prior ? array(prior.fallback_model_ids) : [],
+        userSelectable: prior ? prior.user_selectable === true : false,
+        capabilityRequirements: prior ? object(prior.capability_requirements) : {},
+        changeNote: clean(raw.changeNote, 500) || `批量设置主模型 ${primaryModelId}`,
+      });
+      results.push({ operationId, version: Number(saved.version) || undefined });
+    } catch (error) {
+      results.push({ operationId, error: error instanceof Error ? error.message : '保存失败' });
+    }
+  }
+  return results;
 }
 
 async function rows(table: string, selectedIds: string[]): Promise<Row[]> { if (!selectedIds.length) return []; const result = await getSupabaseAdminClient().from(table).select('*').in('id', selectedIds); if (result.error || (result.data || []).length !== selectedIds.length) throw Error(`${table} 所选版本不完整`); return result.data || []; }

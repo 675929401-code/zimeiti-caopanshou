@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readPublishingAdmin } from "../src/lib/server/publishing-service";
 
 function fixture(missing = "") {
-  const counts: Record<string, number> = { pub_purchases: 2, pub_tasks: 3, pub2_attempts: 5, pub3_operations: 7, pub_accounts: 11, pub3_account_bindings: 13, pub4_account_bindings: 17 };
+  const counts: Record<string, number> = { pub_purchases: 2, pub_tasks: 3, pub2_attempts: 5, pub3_operations: 7, pub_accounts: 11, pub3_account_bindings: 13, pub4_account_bindings: 17, pub5_targets: 19 };
   const reads: { table: string; counted: boolean; filters: Record<string, unknown> }[] = [];
   const db = { from(table: string) {
     const entry = { table, counted: false, filters: {} as Record<string, unknown> }; reads.push(entry);
@@ -20,8 +20,8 @@ function fixture(missing = "") {
 }
 test("actual administrator summary counts each execution generation once and excludes non-publish official operations", async () => {
   const f = fixture(); const result = await readPublishingAdmin(f.db, true);
-  assert.equal(result.stats?.purchases, 2); assert.equal(result.stats?.tasks, 15); assert.equal(result.stats?.accounts, 41);
-  assert.deepEqual(result.stats?.sources, { tasksV1: 3, tasksV2: 5, tasksOfficial: 7, accountsBrowser: 11, accountsDouyin: 13, accountsOAuth: 17 });
+  assert.equal(result.stats?.purchases, 2); assert.equal(result.stats?.tasks, 34); assert.equal(result.stats?.accounts, 41);
+  assert.deepEqual(result.stats?.sources, { tasksV1: 3, tasksV2: 5, tasksOfficial: 7, tasksGeneric: 19, studioSchemaReady: true, accountsBrowser: 11, accountsDouyin: 13, accountsOAuth: 17 });
   assert.equal(f.reads.find(read => read.table === "pub3_operations")?.filters.kind, "publish");
 });
 test("without billing read permission no global task/account/purchase counts are queried", async () => {

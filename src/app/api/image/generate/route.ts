@@ -39,6 +39,8 @@ import {
 import { buildSecureSkillImagePayload, validateSecureSkillGpt25SyncInput } from "@/lib/secure-skill-image-adapter";
 import {
   buildSecureSkillAsyncImagePayload,
+  buildToApisStandardImagePayload,
+  TOAPIS_STANDARD_IMAGE_CONTRACT,
   parseSecureSkillAsyncImageTask,
 } from "@/lib/secure-skill-async-image-adapter";
 import {
@@ -798,7 +800,9 @@ async function generateLocalImageCandidate(options: {
       ? model.api_protocol_config.submit_path
       : "/v1/images/generations";
     apiUrl = buildApiRootEndpoint(model.api_endpoint, submitPath);
-    requestBody = JSON.stringify(buildSecureSkillAsyncImagePayload({
+    const buildPayload = model.api_protocol_config?.adapter_contract === TOAPIS_STANDARD_IMAGE_CONTRACT
+      ? buildToApisStandardImagePayload : buildSecureSkillAsyncImagePayload;
+    requestBody = JSON.stringify(buildPayload({
       modelName: model.model_name,
       prompt: fullPrompt,
       resolution: effectiveResolution,
@@ -1694,10 +1698,10 @@ export async function POST(request: NextRequest) {
     }
     let costPrice = resumeSnapshot ? 0 : effectiveMode === "workflow"
       ? workflowCostPriceGlobal
-      : resolveImageResolutionPrice(modelConfig!, effectiveResolution, "cost");
+      : resolveImageResolutionPrice(modelConfig!, effectiveResolution, "cost", references.length);
     const sellingPrice = resumeSnapshot ? resumeSnapshot.quotedPriceYuan : effectiveMode === "workflow"
       ? workflowSellingPriceGlobal
-      : resolveImageResolutionPrice(modelConfig!, effectiveResolution, "selling");
+      : resolveImageResolutionPrice(modelConfig!, effectiveResolution, "selling", references.length);
     if (!Number.isFinite(costPrice) || costPrice < 0 || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
       return NextResponse.json({
         error: "当前图片模型尚未配置有效成本价和销售价，已停止生成以避免错误扣费",
@@ -2281,7 +2285,7 @@ export async function POST(request: NextRequest) {
               ...(candidateImageUrl.startsWith("data:") ? { kind: "inline", inlineDataUrl: candidateImageUrl } : { kind: "url", rawUrl: candidateImageUrl }),
               mode: "local",
               selectedModelId: candidate.id,
-              selectedCostPrice: resolveImageResolutionPrice(candidate, effectiveResolution, "cost"),
+              selectedCostPrice: resolveImageResolutionPrice(candidate, effectiveResolution, "cost", references.length),
               provider: candidate.provider,
               apiEndpoint: candidate.api_endpoint,
               source: candidate.provider === AUTODL_H3_SELFHOST_PROVIDER ? "autodl-h3-selfhost" : "image-generation",
@@ -2332,7 +2336,7 @@ export async function POST(request: NextRequest) {
       prepareEphemeralResult: async (result, recordId) => {
         const candidate = candidates.find((entry) => entry.id === result.selectedModelId);
         const boundCost = result.mode === "local" && candidate
-          ? resolveImageResolutionPrice(candidate, effectiveResolution, "cost") : costPrice;
+          ? resolveImageResolutionPrice(candidate, effectiveResolution, "cost", references.length) : costPrice;
         if (result.mode !== effectiveMode || result.selectedCostPrice !== boundCost || (result.mode === "local"
           ? !candidate || candidate.provider !== result.provider || candidate.api_endpoint !== result.apiEndpoint
           : result.selectedModelId !== `workflow:${workflowConfig.appId}` || result.apiEndpoint !== workflowConfig.apiUrl)) {

@@ -20,6 +20,8 @@ assert.deepEqual(classifyProviderFailure(new Error(legacyWrappedBalance)), {
 });
 assert.equal(isExplicitProviderRejection(legacyWrappedBalance), true);
 assert.equal(confirmedFailureProviderCost(legacyWrappedBalance, 0.002), 0);
+assert.equal(confirmedFailureProviderCost('PROVIDER_VERIFIED_ZERO_CHARGE', 0.26), 0);
+assert.equal(confirmedFailureProviderCost('UNCLASSIFIED_FAILURE', 0.26), 0.26);
 
 assert.deepEqual(classifyProviderFailure(new Error('IMAGE_PROVIDER_HTTP_429: private upstream body')), {
   status: 'failed',

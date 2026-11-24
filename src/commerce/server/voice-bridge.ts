@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 
-import {readVoiceCatalog} from '@/lib/voice-studio/catalog';
+import {OFFICIAL_VOICES} from '@/lib/vs/voices-data';
+import {isChineseVoice} from '@/lib/vs/voice-curation';
 import {safeFetch} from '@/lib/safe-fetch';
 import {loadVolcanoVoiceProviderConfig} from '@/lib/server/voice-provider-config';
 import {calculateVoiceCost,type CostBreakdown} from '@/lib/vs/pricing';
@@ -128,7 +129,7 @@ function targetFor(speakerId:string){
   return {modelId,providerModelId,providerResourceId};
 }
 function catalogRows(){
-  const rows=testDependencies?.catalog?.()||(readVoiceCatalog(false) as CatalogVoice[]);
+  const rows=testDependencies?.catalog?.()||OFFICIAL_VOICES.filter(isChineseVoice).map((voice):CatalogVoice=>({...voice,id:'v2-'+voice.speakerId,engine:'volcano'}));
   return rows.filter(row=>row.isActive!==false&&row.engine==='volcano'&&row.speakerId&&row.name);
 }
 function pricing(characters:number,modelId:string){return testDependencies?.pricing?.(characters,modelId)??calculateVoiceCost(characters,modelId,1);}

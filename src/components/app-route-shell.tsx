@@ -273,7 +273,7 @@ const MAIN_COMPAT_NAVIGATION_GROUPS: readonly (readonly NavigationItem[])[] = [
   ],
   [
     { label: "帮助中心", href: "/articles", icon: CircleHelp, matches: ["/articles", "/help"] },
-    { label: "积分充值", href: "/recharge", icon: CreditCard, matches: ["/recharge", "/payment"] },
+    { label: "我的余额", href: "/recharge", icon: CreditCard, matches: ["/recharge", "/payment"] },
     { label: "推荐计划", href: "/referral", icon: Gift },
   ],
 ] as const;

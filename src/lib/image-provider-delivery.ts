@@ -44,7 +44,8 @@ export async function readProviderImage(response: Delivery, probeOnly = false, o
     return readAutodlH3SelfhostResult(result.finalUrl, endpoint, { maxBytes: 30 * 1024 * 1024, allowedContentTypes: ["image/png", "image/jpeg", "image/webp"], timeoutMs: 30_000 });
   }
   const result = await readPublicImageResult(url, {
-    timeoutMs: 20_000, maxBytes: probeOnly ? 1 : 30 * 1024 * 1024, maxRedirects: 3,
+    // A range probe reads only one byte. Full-resolution originals can take longer on the same CDN.
+    timeoutMs: probeOnly ? 20_000 : 90_000, maxBytes: probeOnly ? 1 : 30 * 1024 * 1024, maxRedirects: 3,
     allowedContentTypes: ["image/png", "image/jpeg", "image/webp"],
     ...(probeOnly ? { headers: { Range: "bytes=0-0" } } : {}),
   });

@@ -32,7 +32,14 @@ export function parseVideoTokenUsage(payload: unknown): VideoTokenUsage | undefi
 function prices(value: unknown): Record<string, number> | null {
   const input = record(value);
   if (!input || !KEYS.every(key => rate(input[key]))) return null;
-  return Object.fromEntries(KEYS.map(key => [key, input[key] as number]));
+  const keys: string[] = [...KEYS];
+  for (const resolution of ['480p', '1080p', '4k']) {
+    const pair = [resolution + ':no_reference_video', resolution + ':reference_video'];
+    if (!pair.some(key => key in input)) continue;
+    if (!pair.every(key => rate(input[key]))) return null;
+    keys.push(...pair);
+  }
+  return Object.fromEntries(keys.map(key => [key, input[key] as number]));
 }
 export function getVideoTokenPublicPricing(model: PricingModel): {
   salePricesPerMillion: Record<string, number>; priceVersion: string;
@@ -63,11 +70,12 @@ export function createVideoTokenQuote(model: PricingModel, input: {
   if (!publicPricing || !costs) throw new Error("VIDEO_TOKEN_PRICING_UNAVAILABLE");
   if (input.priceVersion !== publicPricing.priceVersion) throw new Error("VIDEO_TOKEN_PRICE_VERSION_CHANGED");
   if (!validLimit(input.maxChargeYuan)) throw new Error("VIDEO_TOKEN_MAX_CHARGE_REQUIRED");
-  if (typeof input.hasReferenceVideo !== "boolean" || input.resolution !== "720p") {
+  if (typeof input.hasReferenceVideo !== "boolean") {
     throw new Error("VIDEO_TOKEN_PRICING_CLASS_UNSUPPORTED");
   }
   const pricingClass = input.hasReferenceVideo ? "reference_video" : "no_reference_video";
   const key = `${input.resolution}:${pricingClass}`;
+  if (!rate(costs[key]) || !rate(publicPricing.salePricesPerMillion[key])) throw new Error("VIDEO_TOKEN_PRICING_CLASS_UNSUPPORTED");
   return {
     schema: "video_token_quote.v1", resolution: input.resolution, pricingClass,
     saleYuanPerMillionTokens: publicPricing.salePricesPerMillion[key],
@@ -94,7 +102,7 @@ function matchesFrozenVersion(snapshot: VideoTokenQuoteSnapshot): boolean {
 export function calculateVideoTokenCharge(snapshot: VideoTokenQuoteSnapshot, usage: VideoTokenUsage): {
   saleAmountYuan: number; costAmountYuan: number;
 } {
-  if (!snapshot || snapshot.schema !== "video_token_quote.v1" || snapshot.resolution !== "720p"
+  if (!snapshot || snapshot.schema !== "video_token_quote.v1" || !['480p', '720p', '1080p', '4k'].includes(snapshot.resolution)
     || !["no_reference_video", "reference_video"].includes(snapshot.pricingClass)
     || !rate(snapshot.saleYuanPerMillionTokens) || !rate(snapshot.costYuanPerMillionTokens)
     || typeof snapshot.priceVersion !== "string" || !snapshot.priceVersion.startsWith("video_token_sale.v1:")

@@ -74,13 +74,31 @@ export function buildSecureSkillAsyncImagePayload(input: SecureSkillAsyncImageRe
   };
 }
 
+export { TOAPIS_STANDARD_IMAGE_CONTRACT } from "./toapis-image-contract";
+
+export function buildToApisStandardImagePayload(input: SecureSkillAsyncImageRequestInput) {
+  const references = input.referenceImageUrls ?? [];
+  if (references.length > 10 || references.some(url => !/^https?:\/\//iu.test(url))) {
+    throw new Error("INVALID_TOAPIS_IMAGE_REFERENCES");
+  }
+  return {
+    model: input.modelName,
+    prompt: input.prompt,
+    n: 1,
+    quality: "high",
+    size: input.aspectRatio,
+    resolution: input.resolution,
+    ...(references.length ? { reference_images: references } : {}),
+  };
+}
+
 export function parseSecureSkillAsyncImageTask(payload: unknown): SecureSkillAsyncImageTask {
   const root = record(payload);
   const data = record(root.data);
   const id = string(root.id) || string(root.generation_id) || string(root.request_id) || string(root.task_id)
     || string(data.id) || string(data.generation_id) || string(data.request_id) || string(data.task_id);
   const imageUrl = firstImageUrl(root.data) || firstImageUrl(root.url)
-    || firstImageUrl(root.result_url) || firstImageUrl(root.output);
+    || firstImageUrl(root.result_url) || firstImageUrl(root.output) || firstImageUrl(root.result);
   let status = normalizedStatus(root.status || data.status);
   if (imageUrl && status === "unknown") status = "succeeded";
   const error = errorMessage(root.error) || errorMessage(data.error);

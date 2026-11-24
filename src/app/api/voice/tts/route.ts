@@ -1,3 +1,4 @@
+import { wholeWalletCredits } from "@/lib/wallet-credit-conversion";
 import { readVoiceCatalog } from '@/lib/voice-studio/catalog';
 // 语音合成 API
 // POST /api/voice/tts
@@ -831,7 +832,7 @@ async function handleSeedAudio(
   if (audioResult) {
     const seconds=Math.min(120,Math.max(1,Number(audioResult.duration)||0));
     const actualRmb=Math.max(0.01,Math.round(costBreakdown.pricing.costPrice*(1+costBreakdown.pricing.profitMargin/100)*seconds/60*100)/100);
-    const actualCredits=Math.min(creditsToCharge,Math.ceil(actualRmb*creditsPerYuan));
+    const actualCredits=Math.min(creditsToCharge,wholeWalletCredits(actualRmb, creditsPerYuan, "ceil"));
     costPrice=roundVoiceAccounting(costBreakdown.pricing.costPrice*seconds/60);retailPrice=actualCredits/creditsPerYuan;
     if (deducted && lifecycle.chargeCredits-lifecycle.refundedCredits>actualCredits) {
       try {await refundCredits(lifecycle,lifecycle.chargeCredits-lifecycle.refundedCredits-actualCredits,'duration_settlement','音色模仿按实际时长结算退回差额',{code:'VOICE_DURATION_SETTLED',durationSeconds:seconds},false);}

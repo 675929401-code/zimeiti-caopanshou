@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './commerce-globals.css';
+import '../../features/commerce-studio/member-appearance.css';
 import { CommerceAuthBridge } from './commerce-auth-bridge';
 
 /*

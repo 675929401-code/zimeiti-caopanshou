@@ -37,12 +37,14 @@ export interface StudioImportItem {
   storage?: 'studio' | 'legacy'; revision?: number
 }
 export interface StudioHistoryItem {
-  id: string; title: string; platform: string; accountName?: string; state: string; createdAt?: string; url?: string
+  id: string; title: string; platform: string; accountId?: string; accountName?: string; state: string; createdAt?: string; url?: string
   evidence?: string; message?: string; revision?: number; transport?: string; publishAt?: string
   availableActions?: StudioRecordAction[]
   operationId?: string
+  draftId?: string
+  draftVersion?: number
 }
-export interface StudioHistoryQuery { page?: number; pageSize?: number; from?: string; to?: string }
+export interface StudioHistoryQuery { page?: number; pageSize?: number; from?: string; to?: string; completeRange?: boolean }
 export type StudioRecordAction = 'refresh' | 'user_action' | 'cancel' | 'reschedule' | 'publish_now' | 'resume'
 export interface StudioUserAction { recordId: string; shortLink: string; schemeUrl: string; expiresAt?: string }
 export interface StudioReview {
@@ -61,9 +63,10 @@ export interface PublishingStudioController {
   quota: { remaining?: number; cost?: number; label?: string; canPublish: boolean; reason?: string }
   busy: string | null; error: string | null; notice: string | null; review: StudioReview | null
   pending: boolean; history: StudioHistoryItem[]; historyLoading: boolean
-  historyPage: { page: number; pageSize: number; total: number; hasMore: boolean }
+  historyPage: { page: number; pageSize: number; total: number; hasMore: boolean; range?: string; rangeError?: boolean }
+  draftSave: { savedAt: string; edited: boolean } | null
   recordDetail: StudioHistoryItem | null; userAction: StudioUserAction | null
-  importItems: StudioImportItem[]; importLoading: boolean; importOpen: boolean
+  importItems: StudioImportItem[]; importLoading: boolean; importError: string | null; importOpen: boolean
   bridgeConfirmation: StudioBridgeConfirmation | null; authorization: StudioAuthorization | null
   authorizationFlow: { platform: string; transport?: 'browser_plugin' | 'official_api'; phase: 'starting' | 'ready' | 'checking' | 'selecting' | 'error'; error?: string; errorCode?: string } | null
   patchDraft(patch: Partial<StudioDraft>): void

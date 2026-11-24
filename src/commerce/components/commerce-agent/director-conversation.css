@@ -14,6 +14,16 @@
 .ca-director-conversation .ca-director-own-settings label{display:flex;align-items:center;gap:7px;margin:12px 0}
 .ca-director-conversation button:disabled{opacity:.45;cursor:not-allowed}
 .ca-director-conversation .ca-director-material-fieldset{border:0;padding:0;margin:0;min-width:0}
+/* 素材条对齐对标站：紧凑缩略图 + 细圆角滚动条，不出现 Windows 粗滚动条 */
+.ca-director-conversation .ca-director-attachments{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:#d4d7dc transparent;padding-bottom:5px}
+.ca-director-conversation .ca-director-attachments::-webkit-scrollbar{height:6px}
+.ca-director-conversation .ca-director-attachments::-webkit-scrollbar-thumb{background:#d4d7dc;border-radius:3px}
+.ca-director-conversation .ca-director-attachments::-webkit-scrollbar-thumb:hover{background:#b9bec7}
+.ca-director-conversation .ca-director-attachments::-webkit-scrollbar-track{background:transparent}
+.ca-director-conversation .ca-director-attachments .ca-material{width:40px;height:40px;border-radius:7px}
+.ca-director-conversation .ca-director-attachments .ca-material>span{display:none}
+.ca-director-conversation .ca-director-attachments .ca-material>button{width:15px;height:15px}
+.ca-director-conversation .ca-director-attachments .ca-material>button>svg{width:10px;height:10px}
 .ca-director-conversation .ca-director-configured-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0;padding:10px;border:1px solid #e6e8ec;border-radius:10px;background:#fafbfc}
 .ca-director-conversation .ca-director-configured-fields legend{padding:0 5px;color:#666d78;font-size:11px}
 .ca-director-conversation .ca-director-configured-fields label{display:flex;flex-direction:column;align-items:stretch;gap:5px;min-width:0;color:#414852;font-size:12px}
@@ -24,3 +34,44 @@
 .ca-director-raw{margin:10px 0;font-size:12px;color:#626875}
 .ca-director-raw summary{cursor:pointer}
 .ca-director-raw pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f6f9;padding:12px;border-radius:8px}
+.ca-director-conversation .ca-director-start-brief {
+  align-self: center;
+  width: min(100%, 380px);
+  margin: auto;
+  padding: 18px 20px;
+  border: 1px solid #cddedb;
+  border-radius: 14px;
+  background: #f5faf9;
+  color: #183832;
+}
+.ca-director-conversation .ca-director-start-brief h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.ca-director-conversation .ca-director-start-brief ul {
+  margin: 9px 0 14px;
+  padding-inline-start: 18px;
+  color: #345950;
+  font-size: 13px;
+  line-height: 1.65;
+  list-style: disc;
+}
+.ca-director-conversation .ca-director-start-brief button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #2a6659;
+  border-radius: 8px;
+  background: #2a6659;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ca-director-conversation .ca-director-start-brief button:focus-visible {
+  outline: 2px solid #205246;
+  outline-offset: 2px;
+}
+.ca-director-conversation .ca-director-start-brief button:disabled {
+  opacity: .68;
+  cursor: default;
+}

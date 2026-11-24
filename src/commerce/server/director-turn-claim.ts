@@ -1,12 +1,16 @@
+import {directorReferenceLayout} from '../shared/director-reference-layout';
+import {isDirectorScene} from '../shared/director-scenarios';
 import {get,put} from './store';
+import observedCatalog from '../components/commerce-agent/observed-catalog.json';
 import {assetBytes,readAsset} from './assets';
 import {probeGeneratedAudioDuration} from '../../lib/digital-human-media';
 import {createHash} from 'node:crypto';
 import {parseDirectorOutput,directorDisplayText,directorGenerationText,isStructuredDirectorOutput} from './director-output';
 import {findDirectorCard,type DirectorCard} from './director-catalog';
 import type {JobInput,Job} from './jobs';
-import {DIRECTOR_AUDIO_MAX_SECONDS,DIRECTOR_REFERENCE_LIMIT,type DirectorApplication,type DirectorBusinessResult,type DirectorConversation,type DirectorMessage,type DirectorReference,type DirectorSettings,type DirectorTurnContext} from './director-conversation-schema';
-import {COMMERCE_VIDEO_MAX_TOTAL_DURATION} from '../shared/video-generation-capabilities';
+import {DIRECTOR_AUDIO_MAX_SECONDS,DIRECTOR_MEDIA_LIMITS,DIRECTOR_REFERENCE_LIMIT,type DirectorApplication,type DirectorBusinessResult,type DirectorConversation,type DirectorMessage,type DirectorReference,type DirectorSettings,type DirectorTurnContext} from './director-conversation-schema';
+import {DIRECTOR_SCRIPT_MIN,DIRECTOR_SCRIPT_MAX,DIRECTOR_LANGUAGES} from '../shared/director-parameters';
+const measuredDirectorKeys=new Set(observedCatalog.directors.filter(card=>!card.default).map(card=>card.key));
 
 export class DirectorConflict extends Error {
   constructor(message:string, public code='DIRECTOR_CONFLICT', public status=409){super(message);}
@@ -53,6 +57,9 @@ export function validateDirectorSelections(settings:DirectorSettings,spec=findDi
 export function validateDirectorReferences(owner:string,settings:DirectorSettings,value:unknown):DirectorReference[]{
   if(!Array.isArray(value)||value.length>DIRECTOR_REFERENCE_LIMIT)throw new DirectorConflict(`编导参考素材最多${DIRECTOR_REFERENCE_LIMIT}项`,'DIRECTOR_REFERENCES_INVALID',400);
   const spec=validateDirectorSelections(settings),counts=new Map(spec.slots.map(slot=>[slot.key,0]));
+  const layout=directorReferenceLayout(spec,settings.sceneTask);
+  let actorCount=0;
+  const mediaCounts={image:0,video:0,audio:0};
   const references=value.map((item,index)=>{
     const raw=item as Partial<DirectorReference>|null;
     if(!raw||!uuid(raw.id)||typeof raw.slot!=='string'||raw.slot.length>100||raw.instanceId!==undefined&&(typeof raw.instanceId!=='string'||raw.instanceId.length>120))throw new DirectorConflict(`第 ${index+1} 项素材引用格式不正确`,'DIRECTOR_REFERENCES_INVALID',400);
@@ -61,12 +68,18 @@ export function validateDirectorReferences(owner:string,settings:DirectorSetting
     const asset=readAsset(raw.id,owner);
     if(!asset)throw new DirectorConflict('参考素材不存在或不可用','DIRECTOR_ASSET_MISSING',404);
     const kind=mediaKind(asset.type);
+    if(kind && kind!=='document' && ++mediaCounts[kind]>DIRECTOR_MEDIA_LIMITS[kind])throw new DirectorConflict(`同一编导任务的 ${kind} 素材最多 ${DIRECTOR_MEDIA_LIMITS[kind]} 个`,'DIRECTOR_REFERENCES_INVALID',400);
     if(!kind||!slot.kinds.includes(kind))throw new DirectorConflict(`素材“${asset.name}”不能用于“${slot.label}”职责`,'DIRECTOR_REFERENCE_TYPE_INVALID',400);
     if(slot.maxFileBytes!==undefined&&asset.size>slot.maxFileBytes)throw new DirectorConflict(`素材“${asset.name}”超过“${slot.label}”文件大小限制`,'DIRECTOR_REFERENCE_SIZE_INVALID',400);
     counts.set(slot.key,(counts.get(slot.key)||0)+1);
-    return {id:asset.id,slot:slot.key,instanceId:raw.instanceId||asset.id,name:asset.name,type:asset.type};
+    if(raw.sceneRole!==undefined){
+      if(raw.sceneRole!=='character'||kind!=='image'||slot.key!==layout.actor?.key)throw new DirectorConflict('角色必须绑定到本场景的图片素材','DIRECTOR_REFERENCE_ROLE_INVALID',400);
+      if(++actorCount>layout.actorMax)throw new DirectorConflict('已超过本场景的角色参考数量','DIRECTOR_REFERENCE_COUNT_INVALID',400);
+    }
+    return {id:asset.id,slot:slot.key,...(raw.sceneRole?{sceneRole:raw.sceneRole}:{}),instanceId:raw.instanceId||asset.id,name:asset.name,type:asset.type};
   });
   for(const slot of spec.slots){const count=counts.get(slot.key)||0;if(count<slot.min||count>slot.max)throw new DirectorConflict(`“${slot.label}”需要 ${slot.min}–${slot.max} 个素材，当前为 ${count} 个`,'DIRECTOR_REFERENCE_COUNT_INVALID',400);}
+  if(layout.product&&references.filter(r=>r.slot===layout.product?.key&&!r.sceneRole&&r.type.startsWith('image/')).length<layout.productMinimum)throw new DirectorConflict(settings.sceneTask?.startsWith('personal-')?'请先添加图片':'请在图片栏添加商品参考图','DIRECTOR_REFERENCE_COUNT_INVALID',400);
   return references;
 }
 
@@ -97,7 +110,7 @@ export function currentDirectorScriptContext(owner:string,input:JobInput){
 export function inspectDirectorMessage(message:DirectorMessage):DirectorBusinessResult {
  const sourceContentHash=directorContentHash(message.content);
  if(!message.outputProtocol||!isStructuredDirectorOutput(message.content))return {version:1,state:'legacy_unverified',sourceContentHash,displayText:message.content,error:'原回复已保留，但不是可校验的新格式。可复制查看；请升级自定义编导提示词或继续要求输出完整新格式脚本。'};
- try{const reply=parseDirectorOutput(message.content,message.settings,message.references,message.outputProtocol);return {version:1,state:reply.replyType==='script'?'ready':'needs_input',sourceContentHash,displayText:directorDisplayText(reply,message.references),...(reply.replyType==='script'?{generationText:directorGenerationText(reply,message.references)}:{}),reply};}
+ try{const reply=parseDirectorOutput(message.content,message.settings,message.references,message.outputProtocol);return {version:1,state:reply.replyType==='script'?'ready':'needs_input',sourceContentHash,displayText:directorDisplayText(reply,message.references,!!message.settings.sceneTask||measuredDirectorKeys.has(message.settings.skillKey)),...(reply.replyType==='script'?{generationText:directorGenerationText(reply,message.references)}:{}),reply};}
  catch(error){return {version:1,state:'invalid',sourceContentHash,displayText:'这份回复尚未通过脚本校验，原文已保留。',error:error instanceof Error?error.message:'脚本格式无效'};}
 }
 function migrateDirectorBusiness(value:DirectorConversation){
@@ -112,11 +125,27 @@ function migrateDirectorBusiness(value:DirectorConversation){
 /** Caller owns the transaction. Synchronization only reads the original job; it never dispatches or retries it. */
 export function synchronizeDirector(owner:string,value:DirectorConversation) {
   const migrated=!value.businessProtocolVersion;migrateDirectorBusiness(value);
-  if(!value.activeJobId){if(migrated)put('director-conversations',value.id,owner,value);return value;}
+  if(!value.activeJobId){
+    const last=value.messages.at(-1);
+    if(last?.role==='assistant'&&last.status==='completed'&&last.business?.state==='invalid'&&last.outputProtocol&&last.baseMessageId===value.latestScriptMessageId&&/[\u200B\uFEFF]/u.test(last.content)){
+      const original=get<Job>('jobs',last.jobId,owner);
+      if(original?.status==='succeeded'&&original.text===last.content){
+        const checked=inspectDirectorMessage(last);
+        if(checked.state==='ready'){
+          last.business=checked;
+          value.latestScriptMessageId=last.id;
+          put('director-conversations',value.id,owner,value);
+          return value;
+        }
+      }
+    }
+    if(migrated)put('director-conversations',value.id,owner,value);
+    return value;
+  }
   const original=get<Job>('jobs',value.activeJobId,owner);
   const message=value.messages.find(m=>m.role==='assistant'&&m.jobId===value.activeJobId);
   if(!original||!message)throw new DirectorConflict('原编导任务记录缺失，请保留会话并核对','DIRECTOR_JOB_MISSING');
-  message.content=original.text||'';
+  message.content=original.status==='saving'&&original.directorResultToSettle?(original.error||'拆解稿已校验，正在结算原单。'):original.text||'';
   if(original.status==='succeeded') {
     const previousLegacyBase=!message.outputProtocol&&!value.latestScriptMessageId&&value.legacyLatestScriptMessageId===message.baseMessageId;
     if(value.latestScriptMessageId!==message.baseMessageId&&!previousLegacyBase){message.status='failed';message.error='脚本基准版本已变化，结果未覆盖当前脚本';}
@@ -145,8 +174,9 @@ function validateClaimSettings(value:unknown):asserts value is DirectorSettings 
   const invalid=()=>{throw new DirectorConflict('编导设置声明不完整或格式无效','DIRECTOR_SETTINGS_INVALID',400);};
   if(!value||typeof value!=='object'||Array.isArray(value))return invalid();
   const raw=value as Record<string,unknown>,keys=['skillKey','selections','spokenLanguage','durationSeconds','generateAudio'];
-  if(Object.keys(raw).some(key=>!keys.includes(key))||keys.some(key=>!Object.hasOwn(raw,key)))return invalid();
-  if(typeof raw.skillKey!=='string'||normalizedDirectorKey(raw.skillKey)!==raw.skillKey||!Number.isInteger(raw.durationSeconds)||Number(raw.durationSeconds)<4||Number(raw.durationSeconds)>COMMERCE_VIDEO_MAX_TOTAL_DURATION||typeof raw.spokenLanguage!=='string'||!['中文','英文','泰国','马来西亚','巴西','不限'].includes(raw.spokenLanguage)||typeof raw.generateAudio!=='boolean')return invalid();
+  if(raw.sceneTask!==undefined&&(!isDirectorScene(raw.sceneTask)||raw.skillKey!=='default-director'))return invalid();
+  if(Object.keys(raw).some(key=>key!=='sceneTask'&&!keys.includes(key))||keys.some(key=>!Object.hasOwn(raw,key)))return invalid();
+  if(typeof raw.skillKey!=='string'||normalizedDirectorKey(raw.skillKey)!==raw.skillKey||!Number.isInteger(raw.durationSeconds)||Number(raw.durationSeconds)<DIRECTOR_SCRIPT_MIN||Number(raw.durationSeconds)>DIRECTOR_SCRIPT_MAX||typeof raw.spokenLanguage!=='string'||!DIRECTOR_LANGUAGES.some(lang=>lang===raw.spokenLanguage)||typeof raw.generateAudio!=='boolean')return invalid();
   const selections=raw.selections;
   if(!selections||typeof selections!=='object'||Array.isArray(selections)||Object.keys(selections).length>20||JSON.stringify(selections).length>8000||Object.entries(selections).some(([key,item])=>!key||key.length>80||!['string','boolean','number'].includes(typeof item)&&!(Array.isArray(item)&&item.every(part=>typeof part==='string'))||typeof item==='number'&&!Number.isFinite(item)))return invalid();
   validateDirectorSelections(value as DirectorSettings);
@@ -164,8 +194,8 @@ export function claimDirectorTurn(owner:string,input:JobInput,jobId:string) {
   const value=synchronizeDirector(owner,requireDirector(owner,context.conversationId));
   if(value.activeJobId)throw new DirectorConflict('此编导会话仍有未结束任务，请查看原任务','DIRECTOR_ACTIVE');
   if(value.latestScriptMessageId!==context.expectedScriptMessageId)throw new DirectorConflict('脚本已更新，请读取最新版本后再修改','DIRECTOR_STALE_SCRIPT');
-  if(context.settings.skillKey!==value.settings.skillKey)throw new DirectorConflict('编导场景或设置已变化','DIRECTOR_SETTINGS_MISMATCH');
-  if(JSON.stringify(input.references||[])!==JSON.stringify(references.map(r=>({id:r.id,slot:r.slot})))||JSON.stringify(context.references.map(r=>({id:r.id,slot:r.slot,instanceId:r.instanceId||r.id})))!==JSON.stringify(references.map(r=>({id:r.id,slot:r.slot,instanceId:r.instanceId||r.id}))))throw new DirectorConflict('编导素材上下文不一致','DIRECTOR_REFERENCES_MISMATCH');
+  if(context.settings.skillKey!==value.settings.skillKey||context.settings.sceneTask!==value.settings.sceneTask)throw new DirectorConflict('编导场景或设置已变化','DIRECTOR_SETTINGS_MISMATCH');
+  if(JSON.stringify(input.references||[])!==JSON.stringify(references.map(r=>({id:r.id,slot:r.slot})))||JSON.stringify(context.references.map(r=>[r.id,r.slot,r.instanceId||r.id,r.sceneRole]))!==JSON.stringify(references.map(r=>[r.id,r.slot,r.instanceId||r.id,r.sceneRole])))throw new DirectorConflict('编导素材上下文不一致','DIRECTOR_REFERENCES_MISMATCH');
   const base={jobId,operationId:input.requestId,baseMessageId:value.latestScriptMessageId,createdAt:Date.now(),settings:context.settings,references,outputProtocol:context.outputProtocol,billing:{status:'unconfirmed' as const}};
   const user:DirectorMessage={...base,id:crypto.randomUUID(),sequence:value.messages.length,role:'user',content:input.prompt,status:'completed'};
   const assistant:DirectorMessage={...base,id:crypto.randomUUID(),sequence:value.messages.length+1,role:'assistant',content:'',status:'pending'};

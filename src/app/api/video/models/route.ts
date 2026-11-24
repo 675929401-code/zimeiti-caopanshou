@@ -1,3 +1,4 @@
+import { catalogRatesForMember, withoutCatalogRates } from "@/lib/server/member-model-catalog";
 import { humanDurationCapabilities } from '@/features/digital-human/duration-policy';
 import { NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
@@ -7,6 +8,8 @@ import {
   getVideoBillingUnit,
 } from "@/lib/video-model-capabilities";
 import { getVideoTokenPublicPricing } from "@/lib/video-token-billing";
+import { doubaoSeedanceResolutions } from "@/lib/video-doubao-seedance-relay";
+import { SEEDANCE_RELAY_RESOLUTIONS } from "@/lib/video-seedance-relay";
 import { getVideoInputContract } from "@/lib/video-input-contract";
 import { isRegisteredVideoProtocol } from "@/lib/video-adapter";
 import { gaoruiVideoCreateContractAdmission } from "@/lib/gaorui-video-contract-admission";
@@ -15,7 +18,7 @@ import { readGaoruiPersonAssetAdmission } from "@/lib/gaorui-person-asset-admiss
 import { supportsConfirmedVideoCancellation } from "@/lib/video-cancellation";
 import { publicMediaBillingCapabilities, toPublicModelDto } from "@/lib/public-model-dto";
 import { publicVideoModelCompatibilityMessage, publicVideoModelInputCompatibilityCode } from "@/lib/video-model-public-status";
-import { isVisibleInPublicWorkspace } from "@/lib/video-workspace-catalog";
+import { commerceVideoCatalogSurface, isVisibleInPublicWorkspace } from "@/lib/video-workspace-catalog";
 import { RETIRED_MODEL_PROVIDER } from "@/lib/model-retirement";
 import { AUTODL_H3_SELFHOST_PROTOCOL } from "@/lib/autodl-h3-selfhost";
 import { requireVideoPriceSnapshot } from "@/lib/video-terminal-finalizer";
@@ -135,9 +138,9 @@ function modelIdentity(row: Record<string, unknown>): string {
 function protocolResolutionAllowlist(row: Record<string, unknown>): Set<string> | null {
   const protocol = String(row.protocol_type || "").trim();
   const modelName = String(row.model_name || "").trim().toLowerCase();
-  if (protocol === "secure_skill_doubao_seedance") return new Set(["720p"]);
+  if (protocol === "secure_skill_doubao_seedance") return new Set(doubaoSeedanceResolutions(modelName));
   if (protocol === "secure_skill_enterprise_video" && modelName === "seedance-2.5") return new Set(["720p"]);
-  if (protocol === "secure_skill_seedance_video") return new Set(["480p", "720p"]);
+  if (protocol === "secure_skill_seedance_video") return new Set(SEEDANCE_RELAY_RESOLUTIONS);
   return null;
 }
 
@@ -214,6 +217,7 @@ export async function GET(request: Request) {
   try {
     const requestedSurface = new URL(request.url).searchParams.get("surface") || "";
     const nativeCatalog = requestedSurface === "publish-center-video";
+    const commerceLibrary = requestedSurface === "commerce-production-library";
     const orderSurface = normalizeVideoModelOrderSurface(requestedSurface);
     const workspaceSurface = videoWorkspaceSurfaceFromRequest(requestedSurface);
     // Every public consumer can create tasks, including callers with no/unknown surface.
@@ -225,7 +229,7 @@ export async function GET(request: Request) {
         ? supabase.from("platform_settings").select("setting_value")
           .eq("setting_key", VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      workspaceSurface
+      workspaceSurface || commerceLibrary
         ? supabase.from("platform_settings").select("setting_value")
           .eq("setting_key", WORKSPACE_MODEL_ASSIGNMENT_SETTING_KEY).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -251,7 +255,7 @@ export async function GET(request: Request) {
 
     const rows = ((Array.isArray(data) ? data : []) as Record<string, unknown>[])
       .filter((row) => nativeCatalog || modelMatchesSurface(row, requestedSurface))
-      .filter((row) => nativeCatalog || !workspaceSurface || isWorkspaceModelAssigned(
+      .filter((row) => commerceLibrary ? Boolean(commerceVideoCatalogSurface(assignmentOverrides, row)) : nativeCatalog || !workspaceSurface || isWorkspaceModelAssigned(
         assignmentOverrides,
         "video",
         row,
@@ -287,8 +291,9 @@ export async function GET(request: Request) {
       const durationStep = Number.isFinite(configuredDurationStep) && configuredDurationStep > 0
         ? configuredDurationStep
         : 0.5;
-      const surfaceCompatibility = workspaceSurface
-        ? evaluateWorkspaceModelCompatibility("video", m, workspaceSurface)
+      const effectiveSurface = commerceLibrary ? commerceVideoCatalogSurface(assignmentOverrides, m) : workspaceSurface;
+      const surfaceCompatibility = effectiveSurface
+        ? evaluateWorkspaceModelCompatibility("video", m, effectiveSurface)
         : null;
       let priceSnapshotReady = true;
       try {
@@ -400,7 +405,8 @@ export async function GET(request: Request) {
       };
     });
 
-    const publicWorkspaceModels = rankedModels.filter((model) => isVisibleInPublicWorkspace(model, workspaceSurface));
+    const publicWorkspaceModels = rankedModels.filter((model) => isVisibleInPublicWorkspace(model,
+      commerceLibrary ? commerceVideoCatalogSurface(assignmentOverrides, model.row) : workspaceSurface));
 
     if (orderSurface) {
       // Each workspace has its own administrator order. Models without an
@@ -501,7 +507,8 @@ export async function GET(request: Request) {
       capabilitiesVerified: model.capabilitiesVerified,
     }, model.tokenPricing));
 
-    return NextResponse.json({ models }, { headers: { "Cache-Control": "no-store" } });
+    const visibleModels = await catalogRatesForMember(request) ? models : models.map(withoutCatalogRates);
+    return NextResponse.json({ models: visibleModels }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json(
       { error: "视频模型列表暂不可用，请稍后刷新", code: "VIDEO_MODEL_CATALOG_UNAVAILABLE", models: [] },

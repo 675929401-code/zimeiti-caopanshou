@@ -98,7 +98,7 @@ export async function main() {
     await dialog.waitFor({ state: "visible", timeout: 20_000 });
 
     const visibleLabels = await dialog.locator("label").allTextContents();
-    for (const required of ["中转站接口", "API 基础地址", "API 密钥", "模型名称", "输入成本", "输出成本", "缓存成本", "利润率(%)", "上下文长度(Token)", "深度思考"]) {
+    for (const required of ["中转站接口", "API 基础地址", "API 密钥", "模型名称", "输入成本", "输出成本", "缓存成本", "成本加价率 (%)", "上下文长度(Token)", "深度思考"]) {
       assert.ok(visibleLabels.some(label => label.includes(required)), `REQUIRED_FIELD_MISSING:${required}`);
     }
     for (const removed of ["模型类型选择", "模型显示名称", "模型简介", "模型图标", "模型排序", "模型调用频率", "账号关联模型", "单次扣除金额", "基础费用", "联网搜索", "图片解析", "文件解析", "管理员备注"]) {
@@ -114,7 +114,7 @@ export async function main() {
     await dialog.getByLabel("输入成本", { exact: true }).fill("0.6");
     await dialog.getByLabel("输出成本", { exact: true }).fill("3");
     await dialog.getByLabel("缓存成本", { exact: true }).fill("0.06");
-    await dialog.getByLabel("利润率", { exact: true }).fill("9.090909");
+    await dialog.getByLabel("成本加价率", { exact: true }).fill("10");
     await dialog.getByLabel("上下文长度", { exact: true }).fill("64000");
     await dialog.getByLabel("最大回复 Token", { exact: true }).fill("256");
     await dialog.getByRole("button", { name: "自带思考", exact: true }).click();
@@ -147,7 +147,7 @@ export async function main() {
     assert.equal(capturedPayload.input_cost_per_million, 0.6);
     assert.equal(capturedPayload.output_cost_per_million, 3);
     assert.equal(capturedPayload.cached_cost_per_million, 0.06);
-    assert.equal(capturedPayload.profit_margin, 9.090909);
+    assert.ok(Math.abs(capturedPayload.profit_margin - 100 / 11) < 1e-9);
     assert.equal(capturedPayload.max_context_tokens, 64000);
     assert.equal(capturedPayload.deep_thinking_type, 2);
     assert.equal(capturedPayload.cost_per_use, 0);
@@ -167,7 +167,7 @@ export async function main() {
     await dialog.getByLabel("输入成本", { exact: true }).fill("0.6");
     await dialog.getByLabel("输出成本", { exact: true }).fill("3");
     await dialog.getByLabel("缓存成本", { exact: true }).fill("0.06");
-    await dialog.getByLabel("利润率", { exact: true }).fill("9.090909");
+    await dialog.getByLabel("成本加价率", { exact: true }).fill("10");
     await dialog.getByLabel("最大回复 Token", { exact: true }).fill("256");
     await dialog.getByRole("button", { name: "保存为候选", exact: true }).click();
     await dialog.getByRole("button", { name: "请先核对保存结果", exact: true }).waitFor({ state: "visible" });

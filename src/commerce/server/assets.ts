@@ -1,9 +1,13 @@
 import fs from 'node:fs/promises';
+import type {CharacterProfile} from '../shared/character-profile';
 import path from 'node:path';
 import {fetchPublic} from './public-network';
 import {createHash} from 'node:crypto';
 import {runtimeDir,get,put,list,remove,db,transaction,claimRecordLease,renewRecordLease,recordLeaseIsCurrent,releaseRecordLease,type DurableRecordLease} from './store';
 import {storageManager} from '../../storage/object';
+
+export const WORD_DOCUMENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export const PRESENTATION_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 export type Asset={
   id:string;
@@ -24,6 +28,7 @@ export type Asset={
   collection?:'assets'|'roles';
   assetGroupId?:'certified_real'|'virtual_human'|null;
   usageDeclaration?:string;
+  characterProfile?:CharacterProfile;
   updatedAt?:number;
 };
 
@@ -60,8 +65,26 @@ async function withAssetMutationLeases<T>(ids:string[],externalGuard:MutationGua
 async function withAssetMutationLease<T>(_owner:string,id:string,externalGuard:MutationGuard|undefined,work:(guard:MutationGuard)=>Promise<T>){return withAssetMutationLeases([id],externalGuard,work);}
 export async function withAssetLease<T>(owner:string,id:string,work:(current:Asset|undefined,guard:MutationGuard)=>Promise<T>,externalGuard?:MutationGuard){return withAssetMutationLease(owner,id,externalGuard,guard=>work(readAsset(id,owner),guard));}
 
+function supportedAssetType(type: string, source: Asset['source'], key?: string) {
+  if (source==='generated' && key?.startsWith('member-documents/') && [WORD_DOCUMENT_TYPE,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain','text/markdown','application/json'].includes(type)) return true;
+  if (type === 'video/x-matroska') return source === 'generated' && !!key?.startsWith('separate-audio/v2/mkv/');
+  if (type === 'application/pdf') return source === 'generated' && !!key?.startsWith('pdf-pages/');
+  if (type === WORD_DOCUMENT_TYPE) return source === 'generated' && !!key?.startsWith('markdown-word/');
+  if (type === PRESENTATION_TYPE) return source === 'generated' && !!key?.startsWith('member-slides/');
+  return /^(?:image\/(?:png|jpeg|webp)|video\/(?:mp4|webm|quicktime)|audio\/(?:mpeg|wav|mp4|ogg|webm|x-wav))$/.test(type);
+}
+
 export function validateMediaBytes(bytes:Buffer,type:string){
   const first=bytes.subarray(0,16),ascii=first.toString('ascii');
+  if(type==='application/pdf'){
+    if(!ascii.startsWith('%PDF-'))throw Error('PDF 文件内容无效');
+    return;
+  }
+  if(['text/plain','text/markdown','application/json'].includes(type)){new TextDecoder('utf-8',{fatal:true}).decode(bytes);return;}
+  if(type===WORD_DOCUMENT_TYPE||type===PRESENTATION_TYPE||type==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){
+    if(bytes.length<4||bytes.readUInt32BE(0)!==0x504b0304)throw Error('Office 文件内容无效');
+    return;
+  }
   const matches=type==='image/png'
     ?first.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
     :type==='image/jpeg'
@@ -70,7 +93,7 @@ export function validateMediaBytes(bytes:Buffer,type:string){
         ?ascii.startsWith('RIFF')&&ascii.slice(8,12)==='WEBP'
         :type.endsWith('/mp4')||type==='video/quicktime'
           ?ascii.slice(4,8)==='ftyp'
-          :type.endsWith('/webm')
+          :type.endsWith('/webm')||type==='video/x-matroska'
             ?first.subarray(0,4).equals(Buffer.from([26,69,223,163]))
             :type.endsWith('/wav')||type.endsWith('/x-wav')
               ?ascii.startsWith('RIFF')&&ascii.slice(8,12)==='WAVE'
@@ -111,7 +134,7 @@ function assertAssetMetadata(asset:Asset,bytes?:Buffer){
   if(!/^[a-f0-9-]{36}$/i.test(asset.id)||!asset.owner)throw Error('资产稳定身份无效');
   if(!Number.isFinite(asset.createdAt)||asset.createdAt<=0)throw Error('资产创建时间无效');
   if(asset.size<1||asset.size>150*1024*1024)throw Error('文件大小须为 1 字节至 150 MB');
-  if(!/^image\/(png|jpeg|webp)$|^video\/(mp4|webm|quicktime)$|^audio\/(mpeg|wav|mp4|ogg|webm|x-wav)$/.test(asset.type))throw Error('此文件类型不支持');
+  if(!supportedAssetType(asset.type,asset.source,asset.idempotencyKey))throw Error('此文件类型不支持');
   if(!/^[a-f0-9]{64}$/.test(asset.sha256))throw Error('资产内容哈希无效');
   if(bytes){
     if(bytes.length!==asset.size||createHash('sha256').update(bytes).digest('hex')!==asset.sha256)throw Error('资产记录与待保存文件不一致');
@@ -252,7 +275,7 @@ export async function storeAsset(
   mutationGuard?:MutationGuard,
 ){
   if(bytes.length===0||bytes.length>150*1024*1024)throw Error('文件大小须为 1 字节至 150 MB');
-  if(!/^image\/(png|jpeg|webp)$|^video\/(mp4|webm|quicktime)$|^audio\/(mpeg|wav|mp4|ogg|webm|x-wav)$/.test(type))throw Error('此文件类型不支持');
+  if(!supportedAssetType(type,source,idempotencyKey))throw Error('此文件类型不支持');
   validateMediaBytes(bytes,type);
   const id=idempotencyKey?deterministicAssetId(owner,idempotencyKey):crypto.randomUUID(),asset:Asset={
     id,owner,name:name.slice(0,160),type,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),createdAt:Date.now(),source,
@@ -357,21 +380,73 @@ export async function downloadResult(url:string,expected:'image'|'video'|'audio'
     if(!match||expected!=='image')throw Error('图片结果格式无效');
     return {bytes:Buffer.from(match[2],'base64'),type:match[1]};
   }
-  const response=await publicFetch(url);
+  try {
+    return await downloadStoredMedia(url,expected);
+  } catch (error) {
+    if (!(error instanceof MediaTransferInterrupted)) throw error;
+    return downloadStoredMedia(url,expected);
+  }
+}
+
+class MediaTransferInterrupted extends Error {}
+
+const VIDEO_DOWNLOAD_CHUNK = 512 * 1024;
+const RESULT_BYTE_LIMIT = 150 * 1024 * 1024;
+
+async function downloadStoredMedia(url:string,expected:'image'|'video'|'audio') {
+  if (expected !== 'video') return readResultBody(await publicFetch(url),expected);
+  const first = await publicFetch(url,{headers:{Range:`bytes=0-${VIDEO_DOWNLOAD_CHUNK-1}`}});
+  if ([400,403,405,416,501].includes(first.status)) {
+    await first.body?.cancel();
+    return readResultBody(await publicFetch(url),expected);
+  }
+  if (first.status !== 206) return readResultBody(first,expected);
+  const range = first.headers.get('content-range')?.match(/^bytes 0-(\d+)\/(\d+)$/);
+  const size = Number(range?.[2]);
+  if (!range || !Number.isSafeInteger(size) || size <= 0 || size > RESULT_BYTE_LIMIT || Number(range[1]) !== Math.min(size,VIDEO_DOWNLOAD_CHUNK)-1) {
+    await first.body?.cancel();
+    throw Error('视频分段长度无效或超过文件上限');
+  }
+  const etag = first.headers.get('etag');
+  if (size > VIDEO_DOWNLOAD_CHUNK && (!etag || etag.startsWith('W/'))) {
+    await first.body?.cancel();
+    return readResultBody(await publicFetch(url),expected);
+  }
+  const result = await readResultBody(first,expected,Number(range[1])+1);
+  if (result.bytes.length !== Number(range[1])+1) throw new MediaTransferInterrupted('视频首段不完整，可重试保存原结果');
+  const chunks = [result.bytes];
+  const chunkSize = size>32*1024*1024 ? 2*1024*1024 : VIDEO_DOWNLOAD_CHUNK;
+  for (let start=result.bytes.length; start<size; start+=chunkSize) {
+    const end=Math.min(start+chunkSize,size)-1;
+    const response=await publicFetch(url,{headers:{Range:`bytes=${start}-${end}`,'If-Range':etag!}});
+    if (response.status!==206 || response.headers.get('etag')!==etag || response.headers.get('content-range')!==`bytes ${start}-${end}/${size}`) {
+      await response.body?.cancel();
+      throw new MediaTransferInterrupted('视频分段已变化，可重试保存原结果');
+    }
+    const part=await readResultBody(response,expected,end-start+1);
+    if (part.type!==result.type || part.bytes.length!==end-start+1) throw new MediaTransferInterrupted('视频分段不完整，可重试保存原结果');
+    chunks.push(part.bytes);
+  }
+  return {bytes:Buffer.concat(chunks,size),type:result.type};
+}
+
+async function readResultBody(response:Response,expected:'image'|'video'|'audio',limit=RESULT_BYTE_LIMIT) {
   if(!response.ok)throw Error(`结果下载失败（${response.status}），可重试保存原结果`);
   const type=(response.headers.get('content-type')||'').split(';')[0];
   if(!type.startsWith(`${expected}/`))throw Error('模型返回的媒体类型不正确');
-  if(Number(response.headers.get('content-length'))>150*1024*1024)throw Error('生成文件过大');
+  if(Number(response.headers.get('content-length'))>limit){await response.body?.cancel();throw Error('生成文件超过请求大小');}
   const reader=response.body?.getReader();
   if(!reader)throw Error('结果内容为空');
   const chunks:Buffer[]=[];
   let size=0;
   for(;;){
-    const {value,done}=await reader.read();
+    const {value,done}=await reader.read().catch(()=>{throw new MediaTransferInterrupted('生成文件传输中断，可重试保存原结果');});
     if(done)break;
     size+=value.length;
-    if(size>150*1024*1024){await reader.cancel();throw Error('生成文件过大');}
+    if(size>limit){await reader.cancel();throw Error('生成文件超过请求大小');}
     chunks.push(Buffer.from(value));
   }
+  const length=response.headers.get('content-length');
+  if(length!==null && Number(length)!==size)throw new MediaTransferInterrupted('生成文件传输不完整，可重试保存原结果');
   return {bytes:Buffer.concat(chunks),type};
 }

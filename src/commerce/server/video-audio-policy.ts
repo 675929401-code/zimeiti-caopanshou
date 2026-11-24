@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
-import os from 'node:os';
+import { runtimeDir } from './store';
 import path from 'node:path';
 import { resolveFfmpegExecutable } from '@/lib/video-postprocess';
 import { assetBytes, readAsset, validateMediaBytes } from './assets';
@@ -39,7 +39,9 @@ export async function enforceVideoAudioPolicy(downloaded: DownloadedVideo, gener
   if (generateAudio !== false) return downloaded;
   if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(downloaded.type)) throw Error('视频结果格式不支持声音规则处理');
   const suffix = extension(downloaded.type);
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'commerce-video-audio-'));
+  const workRoot = runtimeDir();
+  await fs.mkdir(workRoot, { recursive: true, mode: 0o700 });
+  const directory = await fs.mkdtemp(path.join(workRoot, 'commerce-video-audio-'));
   const input = path.join(directory, `input.${suffix}`);
   const output = path.join(directory, `silent.${suffix}`);
   try {
@@ -60,14 +62,15 @@ export async function enforceVideoAudioPolicy(downloaded: DownloadedVideo, gener
 export async function inspectSavedVideoAudioPolicy(owner: string, assetId: string) {
   const asset = readAsset(assetId, owner);
   if (!asset || !asset.type.startsWith('video/')) throw Error('视频 canary 结果资产不存在');
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'commerce-video-probe-'));
+  const directory = await fs.mkdtemp(path.join(runtimeDir(), 'commerce-video-probe-'));
   const input = path.join(directory, `input.${extension(asset.type)}`);
   try {
     const bytes = await assetBytes(asset);
     validateMediaBytes(bytes, asset.type);
     await fs.writeFile(input, bytes, { flag: 'wx', mode: 0o600 });
     const log = await ffmpeg(['-hide_banner', '-nostdin', '-i', input, '-map', '0:v:0', '-an', '-frames:v', '1', '-f', 'null', '-'], 30_000);
-    const hasAudio = /Stream #0:\d+(?:\([^\r\n)]*\))?: Audio:/u.test(log);
+    const inputStreams = log.split('Stream mapping:', 1)[0];
+    const hasAudio = /^\s*Stream #0:\d+(?:\[[^\]\r\n]*\])?(?:\([^\r\n)]*\))?:\s*Audio:/mu.test(inputStreams);
     return { hasAudio, assetId: asset.id, mimeType: asset.type, bytes: asset.size };
   } finally {
     await fs.rm(directory, { recursive: true, force: true });

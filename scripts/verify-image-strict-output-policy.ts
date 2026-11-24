@@ -11,6 +11,7 @@ import { ImageExactlyOnceError, ImageRequestRejectedError, MemoryImageExactlyOnc
 import { parseImageDimensions } from "../src/lib/image-dimensions";
 import { validateUploadBuffer } from "../src/lib/file-upload-security";
 import { AUTODL_H3_SELFHOST_IMAGE_VERIFIED_OUTPUT_PIXEL_SIZES, AUTODL_H3_SELFHOST_PROVIDER, autodlH3ImagePixelSize } from "../src/lib/autodl-h3-selfhost";
+import { TOAPIS_STANDARD_IMAGE_CONTRACT } from "../src/lib/toapis-image-contract";
 
 const file = "src/app/api/image/generate/route.ts";
 const source = readFileSync(file, "utf8");
@@ -62,7 +63,11 @@ async function main() {
     assert.equal(configuredImageDeliveryPixelSizeFor({ output_pixel_size_by_resolution: { "2K": { "16:9": size } } }, "2K", "16:9"), null);
   }
   assert.equal(configuredImageDeliveryPixelSizeFor({ output_pixel_size_by_resolution: { "2K": { "16:9": "2560x1440" } } }, "2K", "16:9"), "2560x1440");
+  assert.equal(configuredImageDeliveryPixelSizeFor({ adapter_contract: TOAPIS_STANDARD_IMAGE_CONTRACT }, "1K", "5:4"), "1120x896");
+  assert.notEqual(configuredImageDeliveryPixelSizeFor({ adapter_contract: "other_contract" }, "1K", "5:4"), "1120x896");
+  assert.equal(configuredImageDeliveryPixelSizeFor({ adapter_contract: TOAPIS_STANDARD_IMAGE_CONTRACT }, "1K", "5:4"), configuredImageDeliveryPixelSizeFor({ adapter_contract: TOAPIS_STANDARD_IMAGE_CONTRACT, output_pixel_size_by_resolution: { "1K": { "5:4": "1144x912" } } }, "1K", "5:4"));
   checks.push("Immutable V1 and strict V2 coexist; delivery ignores provider request/input maps; underspecified native output cannot silently weaken the displayed K tier");
+  checks.push("ToAPIs standard GPT Image 2.6 delivers its observed 1K 5:4 native 1120x896; the table stays scoped to its own contract and wins over stale configured maps");
 
   const deliveryTarget = compile(`${functions.get("expectedImageDeliveryPixelSize")}\nexpectedImageDeliveryPixelSize;`, {
     AUTODL_H3_SELFHOST_PROVIDER, AUTODL_H3_SELFHOST_IMAGE_VERIFIED_OUTPUT_PIXEL_SIZES, configuredImageDeliveryPixelSizeFor,
@@ -112,6 +117,7 @@ async function main() {
     userId: "owner", effectiveMode: "local", modelId: "pm_first", modelConfig: candidate, candidates: [candidate], workflowConfig: {},
     workflowPrompt: "", fullPrompt: "effective prompt", prompt: "original prompt", style: "", exactCoverText: "", ratio: "16:9", effectiveResolution: "2K",
     outputPixelSize: "4096x2304", outputPolicy: strictPolicy, providerProtocol: "images_generations", IMAGE_FIXED_OUTPUT_COUNT: 1,
+    nativeInvocation: null, nativeInput: { invocation: null, referenceUris: [] as string[] },
     body: {}, referenceImageUrls: [], references: [], referenceUsage: "general", costPrice: 0.05, sellingPrice: 0.1,
     parseImageFailureRequestSnapshot, strictImagePayloadFingerprint };
   const fingerprint = (extra: object = {}) => compile(`${declarations.get("generationFingerprint")}\ngenerationFingerprint;`, { ...fingerprintBase, ...extra }) as string;
@@ -141,6 +147,7 @@ async function main() {
   checks.push("Actual byte validator rejects undersized strict output including either dimension one pixel short; original V1 1672x941 acceptance remains unchanged; exact target and composition pass");
 
   const callbackContext = { candidates: [candidate], effectiveResolution: "2K", ratio: "16:9", costPrice: 0.05, effectiveMode: "local", resumeSnapshot: null,
+    references: [] as string[], legacyAcceptedAnnotation: false,
     workflowConfig: {}, resolveImageResolutionPrice: () => 0.05, ImageExactlyOnceError, decodeInlineImage: (value: string) => ({ buffer: Buffer.from(value.split(",")[1], "base64"), contentType: "image/png" }),
     validateUploadBuffer, AUTODL_H3_IMAGE_CONTENT_TYPES: ["image/png"], prepareGeneratedImageBytes: helpers, deliveryOutputContract: () => strict,
     exactCoverText: "", createImageEphemeralDelivery: async () => { throw new Error("UNDERSIZED_MUST_NOT_DELIVER"); },

@@ -1,0 +1,118 @@
+/*
+ * 工作台导航与首页版式对齐（2026-11-16，作者：网站开发）
+ * 依据：升级后对标截图逐项清单（M00 / M01 / M-V00 / M-L01..06）。只对齐结构、版式、颜色、尺寸；
+ * 文案与品牌使用我方自有内容。截图为设备像素，本文件按约 2:1 折算为 CSS 像素（换算系数待核）。
+ * 作用域：全部限定在 .commerce-root 内，不影响主站与其他页面。
+ */
+
+/* ── 左侧图标竖栏 ── */
+.commerce-root .ca-rail{width:52px;padding:12px 6px 12px;background:#F9F9F9;border-right:0;color:#111111}
+.commerce-root[data-tab="home"] .ca-rail{padding-top:12px}
+.commerce-root .ca-rail .ca-brand{display:flex;width:32px;height:32px;margin:0 0 14px;border-radius:9px;background:#EFEFEF;color:#111111}
+.commerce-root .ca-rail nav{gap:6px;align-items:center}
+.commerce-root .ca-rail nav button,.commerce-root .ca-rail nav a{position:relative;width:36px;height:36px;min-height:36px;padding:0;border-radius:10px;background:transparent;color:#111111;gap:0}
+.commerce-root .ca-rail nav button:not(.active){color:#111111}
+.commerce-root .ca-rail nav button.active,.commerce-root .ca-rail nav button[aria-current="page"]{background:#EAEAEA;color:#111111}
+.commerce-root .ca-rail nav button:hover:not(:disabled){background:#EFEFEF;color:#111111}
+.commerce-root .ca-rail nav button.active:hover{background:#EAEAEA}
+.commerce-root .ca-rail nav button>span,.commerce-root .ca-rail-credits>span,.commerce-root .ca-rail-bottom>a:not(.ca-rail-login)>span{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.commerce-root .ca-rail-credits{width:36px;height:30px;padding:0;margin-top:10px;border:0;border-radius:10px;justify-content:center}
+.commerce-root .ca-rail-bottom>a:not(.ca-rail-login){display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;color:#111111}
+.commerce-root .ca-rail-bottom>a:not(.ca-rail-login):hover{background:#EFEFEF}
+
+/* ── 常驻「AI 视频」编导栏 ── */
+.commerce-root .ca-director-nav{width:184px;flex-shrink:0;display:flex;flex-direction:column;min-height:0;background:#FCFCFC;border-right:1px solid #EFEFEF;color:#181818;z-index:1}
+.commerce-root .ca-director-nav>header{display:flex;align-items:center;justify-content:space-between;height:46px;padding:0 8px 0 14px;flex-shrink:0}
+.commerce-root .ca-director-nav>header>strong{font-size:15px;font-weight:600;color:#181818;line-height:22px}
+.commerce-root .ca-director-nav-toggle{width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:#707070}
+.commerce-root .ca-director-nav-toggle:hover:not(:disabled){background:#EFEFEF;color:#181818}
+.commerce-root .ca-director-nav-body{flex:1;min-height:0;overflow-y:auto;padding:0 6px 16px;scrollbar-width:thin;scrollbar-color:#E2E2E2 transparent}
+.commerce-root .ca-director-nav section{margin-top:6px}
+.commerce-root .ca-director-nav h3{margin:8px 8px 4px;font-size:12px;font-weight:400;line-height:18px;color:#8F8F8F!important}
+.commerce-root .ca-director-nav ul{list-style:none;margin:0;padding:0}
+.commerce-root .ca-director-nav li button{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;min-height:37px;padding:4px 8px;border:0;border-radius:8px;background:transparent;text-align:left;color:#181818}
+.commerce-root .ca-director-nav li button:hover:not(:disabled){background:#F1F1F1;color:#181818}
+.commerce-root .ca-director-nav li button.active{background:#EAEAEA;color:#181818}
+.commerce-root .ca-director-nav li button>img,.commerce-root .ca-director-nav-thumb{width:22px;height:22px;flex-shrink:0;border-radius:5px;object-fit:cover;background:#EDEDED;display:inline-flex;align-items:center;justify-content:center;color:#555555}
+.commerce-root .ca-director-nav li button>span:last-child{display:flex;flex-direction:column;min-width:0}
+.commerce-root .ca-director-nav li strong{font-size:13px;font-weight:500;line-height:18px;color:#181818;white-space:nowrap}
+.commerce-root .ca-director-nav li small{font-size:11px;line-height:15px;color:#717171;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.commerce-root .ca-director-nav-collapsed{width:40px;align-items:center;padding-top:9px}
+@media(max-width:900px){.commerce-root .ca-director-nav{width:168px}}
+
+/* ── 首页：底色、英雄区占位、标题 ── */
+.commerce-root .ca-home{background:#FCFCFC;color:#171717}
+.commerce-root .ca-home-backdrop{position:absolute;left:0;right:0;top:0;height:330px;pointer-events:none;background:linear-gradient(180deg,#E8F1FF 0%,#F3EEFF 52%,#FCFCFC 100%)}
+.commerce-root .ca-home-title{position:relative;margin:77px auto 0;padding:0 24px;text-align:center;font-size:22px;font-weight:600;line-height:32px;color:#171717}
+.commerce-root .ca-home-title-brand{color:#0471FE}
+
+/* ── 首页：单行输入胶囊 ── */
+.commerce-root .ca-hero.ca-hero-capsule{position:relative;width:min(626px,calc(100% - 48px));margin:39px auto 0}
+.commerce-root .ca-capsule-materials{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:0 0 8px;max-width:none}
+.commerce-root .ca-capsule-materials .ca-material{width:48px;height:48px}
+.commerce-root .ca-home-capsule{display:flex;align-items:center;gap:6px;height:42px;padding:0 6px 0 7px;background:#FFFFFF;border:1px solid #F0F0F0;border-radius:999px;box-shadow:0 2px 12px rgba(23,23,23,.06)}
+.commerce-root .ca-capsule-plus-wrap{position:relative;display:flex}
+.commerce-root .ca-capsule-plus,.commerce-root .ca-capsule-mic{width:30px;height:30px;padding:0;border:0;border-radius:50%;background:transparent;color:#171717;flex-shrink:0}
+.commerce-root .ca-capsule-plus:hover:not(:disabled),.commerce-root .ca-capsule-mic:hover:not(:disabled){background:#F3F3F3;color:#171717}
+.commerce-root .ca-capsule-mic.listening{color:#0471FE;background:#EEF5FF}
+.commerce-root .ca-home-capsule textarea{flex:1;min-width:0;height:22px;min-height:0;padding:0;border:0;border-radius:0;background:transparent;resize:none;overflow:hidden;white-space:nowrap;font-size:14px;line-height:22px;color:#171717}
+.commerce-root .ca-home-capsule textarea::placeholder{color:#BFBFBF}
+.commerce-root .ca-home-capsule textarea:focus-visible{outline:none}
+.commerce-root .ca-capsule-send{width:30px;height:30px;padding:0;border:0;border-radius:50%;background:#F2F2F2;color:#AEAEAE;flex-shrink:0;transition:none}
+.commerce-root .ca-capsule-send[data-empty="false"]{background:#171717;color:#FFFFFF}
+.commerce-root .ca-capsule-send[data-empty="false"]:hover:not(:disabled){background:#000000;color:#FFFFFF}
+.commerce-root .ca-capsule-menu{top:38px;left:-4px;width:196px;padding:8px;display:flex;flex-direction:column;gap:2px}
+.commerce-root .ca-capsule-menu>button,.commerce-root .ca-capsule-menu [role="radiogroup"]>button{justify-content:flex-start;width:100%;padding:7px 9px;border:0;border-radius:8px;background:transparent;font-size:13px;color:#171717}
+.commerce-root .ca-capsule-menu [role="radiogroup"]{display:flex;flex-direction:column;gap:2px}
+.commerce-root .ca-capsule-menu [role="radiogroup"]>button{justify-content:space-between}
+.commerce-root .ca-capsule-menu button:hover:not(:disabled){background:#F3F3F3;color:#171717}
+.commerce-root .ca-capsule-menu button.selected{background:#EAEAEA;border:0;color:#171717}
+.commerce-root .ca-capsule-menu>small{margin:6px 9px 2px;color:#8F8F8F;font-size:12px}
+
+/* ── 首页：快捷工具白胶囊（左图标右文字） ── */
+.commerce-root .ca-quick-tools.ca-quick-capsules{position:relative;display:flex;flex-wrap:wrap;justify-content:center;gap:10px;width:calc(100% - 48px);max-width:none;margin:38px auto 0}
+.commerce-root .ca-quick-capsules>button{flex-direction:row;gap:6px;height:30px;padding:0 14px;border:1px solid #EDEDED;border-radius:999px;background:#FFFFFF;color:#141414;font-size:13px;line-height:20px;white-space:nowrap}
+.commerce-root .ca-quick-capsules>button:hover:not(:disabled){border-color:#DCDCDC;background:#FFFFFF;color:#141414}
+
+/* ── 首页：场景卡（左 1 大卡 + 右 2×3 小卡） ── */
+.commerce-root .ca-home .ca-scenarios{position:relative;width:calc(100% - 96px);max-width:1310px;margin:38px auto 0}
+.commerce-root .ca-home .ca-scenarios .ca-section-head{margin-bottom:14px}
+.commerce-root .ca-home .ca-scenarios h2{font-size:18px;font-weight:600;color:#171717!important}
+.commerce-root .ca-home .ca-scenarios h2 small{font-size:13px;color:#8F8F8F;margin-left:10px;font-weight:400}
+.commerce-root .ca-scenario-grid{display:grid;grid-template-columns:minmax(0,1.14fr) repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,90px);gap:11px 12px}
+.commerce-root .ca-scenario-grid .ca-scenario{flex:none;min-width:0;max-width:none;margin:0;padding:0;border:1px solid #EFEFEF;border-radius:12px;background:#FFFFFF;overflow:hidden;text-align:left;color:#171717}
+.commerce-root .ca-scenario-grid .ca-scenario-lead{grid-row:1 / span 2;position:relative;border:0;border-radius:14px;background:#E9E9EC}
+.commerce-root .ca-scenario-grid .ca-scenario-lead .ca-scenario-image{position:absolute;inset:0;aspect-ratio:auto}
+.commerce-root .ca-scenario-grid .ca-scenario-lead .ca-scenario-image::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 45%,rgba(0,0,0,.55))}
+.commerce-root .ca-scenario-grid .ca-scenario-lead>div:last-child{position:absolute;left:0;right:0;bottom:0;z-index:1;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px 16px}
+.commerce-root .ca-scenario-grid .ca-scenario-lead strong{font-size:18px;font-weight:600;color:#FFFFFF}
+.commerce-root .ca-scenario-grid .ca-scenario-lead>div:last-child>span{font-size:12px;color:#FFFFFF;white-space:normal}
+.commerce-root .ca-scenario-grid .ca-scenario-mini{flex-direction:row;align-items:center!important;padding:10px}
+.commerce-root .ca-scenario-grid .ca-scenario-mini .ca-scenario-image{width:70px;height:70px;flex-shrink:0;aspect-ratio:1;border-radius:8px;margin-right:10px}
+.commerce-root .ca-scenario-grid .ca-scenario-mini>div:last-child{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:0}
+.commerce-root .ca-scenario-grid .ca-scenario-mini strong{font-size:14px;font-weight:500;color:#171717}
+.commerce-root .ca-scenario-grid .ca-scenario-mini>div:last-child>span{font-size:12px;line-height:17px;color:#8F8F8F;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.commerce-root .ca-scenario-grid .ca-scenario:hover:not(:disabled){color:#171717}
+@media(max-width:1200px){.commerce-root .ca-scenario-grid{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:none;grid-auto-rows:90px}.commerce-root .ca-scenario-grid .ca-scenario-lead{grid-column:1 / -1;grid-row:auto;height:180px}}
+@media(max-width:600px){.commerce-root .ca-scenario-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.commerce-root .ca-home .ca-scenarios{width:calc(100% - 28px)}}
+
+/* ── 首页：发现区页签 ── */
+.commerce-root .ca-home .ca-discovery-gallery .ca-tabs button{padding:4px 14px;border:0;border-radius:999px;background:transparent;color:#999999;font-size:14px}
+.commerce-root .ca-home .ca-discovery-gallery .ca-tabs button.selected{background:#EBEBEB;color:#1A1A1A}
+.commerce-root .ca-home .ca-discovery-gallery{position:relative;width:calc(100% - 96px);max-width:1310px;margin:72px auto 0}
+
+/* ── 第三轮：头像、更多菜单、登录入口（2026-11-16，网站开发） ── */
+.commerce-root .ca-rail-avatar{display:flex;align-items:center;justify-content:center;width:32px;height:32px;margin:0 0 14px;border-radius:9px;overflow:hidden;background:#EFEFEF;color:#111111;font-size:14px;font-weight:600;text-decoration:none;flex-shrink:0}
+.commerce-root .ca-rail-avatar img{width:100%;height:100%;object-fit:cover}
+.commerce-root .ca-rail-avatar-empty{background:#EFEFEF}
+.commerce-root .ca-rail-bottom{display:flex;flex-direction:column;align-items:center;gap:8px}
+.commerce-root .ca-rail-more{position:relative}
+.commerce-root .ca-rail-more-toggle{width:36px;height:36px;padding:0;border:0;border-radius:10px;background:transparent;color:#111111}
+.commerce-root .ca-rail-more-toggle:hover:not(:disabled),.commerce-root .ca-rail-more-toggle[aria-expanded="true"]{background:#EAEAEA;color:#111111}
+.commerce-root .ca-rail-more-menu{position:absolute;left:44px;bottom:0;z-index:30;display:flex;flex-direction:column;gap:2px;width:212px;padding:8px;border:1px solid #EFEFEF;border-radius:12px;background:#FFFFFF;box-shadow:0 8px 28px rgba(23,23,23,.12);text-align:left}
+.commerce-root .ca-rail-more-menu>button,.commerce-root .ca-rail-more-menu>a{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:#171717;font-size:13px;text-decoration:none}
+.commerce-root .ca-rail-more-menu>button:hover:not(:disabled),.commerce-root .ca-rail-more-menu>a:hover{background:#F3F3F3;color:#171717}
+.commerce-root .ca-rail-login{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 10px;border:1px solid #EDEDED;border-radius:999px;background:#FFFFFF;color:#181818;font-size:12px;text-decoration:none;white-space:nowrap}
+/* 编导提交区完整显示（第三轮）：底栏不被 flex 压缩裁掉，由上方对话区收缩滚动 */
+.commerce-root .ca-director-conversation>.ca-director-composer{flex-shrink:0;height:auto;max-height:none}
+.commerce-root .ca-director-conversation>:not(.ca-director-composer){min-height:0}

@@ -5,6 +5,7 @@
  * 分离原因：流式响应构造（~260行）与配置解析无关，独立更清晰。
  */
 
+import { hasDeliveredUsage, missingUsageReceipt } from "@/lib/reported-token-usage";
 import type { ChatRequest, LLMProxy } from "@/lib/llm-proxy";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "@/lib/sse-stream-decoder";
 import { LlmResponseStartError, LlmStreamError, upstreamStreamError, responseStartError, sanitizeLlmSafeDiagnostics } from "@/lib/llm-proxy/stream-error";
@@ -72,22 +73,14 @@ export function handleStreamResponse(
   const protectedPrompt = ctx.messages.filter(m=>m.role==='system').map(m=>messageText(m.content)).join('\n');
 
   const settleCompletedUsage = async () => {
-    const measured = usageData && (usageData.prompt_tokens > 0 || usageData.completion_tokens > 0)
-      ? usageData
-      : {
-          prompt_tokens: Math.ceil(JSON.stringify(chatRequest.messages).length / 2),
-          completion_tokens: Math.ceil((fullContent.length + reasoningContent.length) / 2),
-          cached_tokens: 0,
-        };
-    const completionTokens = ctx.agentDeepThinkingType === 2
-      ? Math.ceil(measured.completion_tokens * ctx.agentDeductDeepThink)
-      : measured.completion_tokens;
+    const measured = usageData;
+    if (!hasDeliveredUsage(measured)) throw new Error("MISSING_PROVIDER_USAGE");
     return settleLlmUsage(
       ctx.verifiedUserId,
       ctx.agentName || "unknown",
       ctx.useModel,
       measured.prompt_tokens,
-      completionTokens,
+      measured.completion_tokens,
       measured.cached_tokens,
       ctx.agentId,
       {
@@ -245,7 +238,8 @@ export function handleStreamResponse(
                 balance_after: settlement.balanceAfter,
                 already_fulfilled: settlement.alreadyFulfilled === true,
               })}\n\n`));
-            } catch {
+            } catch (cause) {
+              const missingUsage = cause instanceof Error && cause.message === "MISSING_PROVIDER_USAGE";
               console.error("[Billing] LLM response settlement failed", { code: "LLM_BILLING_FAILED" });
               recordModelFailure(ctx.useModel, "billing_failed");
               reservationNeedsReconciliation = Boolean(ctx.reservation && liveDelivery);
@@ -254,6 +248,7 @@ export function handleStreamResponse(
                 code: "LLM_BILLING_FAILED",
                 reconciliation_required: reservationNeedsReconciliation,
                 done: false,
+                ...(missingUsage ? missingUsageReceipt : {}),
               })}\n\n`));
               safeClose();
               return;
@@ -411,17 +406,16 @@ export async function handleNonStreamResponse(
       })
     : await proxy!.chat(chatRequest);
 
-  const tokenUsage = result.usage || {
-    prompt_tokens: Math.ceil(ctx.messages.reduce((acc: number, m) => acc + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0) * 0.8),
-    completion_tokens: Math.ceil(result.content.length * 1.2),
-    cached_tokens: 0,
-  };
+  const tokenUsage = result.usage;
   const protectPrompt = Boolean(bipStep(ctx.agentId));
   if (protectPrompt && !result.content.trim()) {
     return new Response(JSON.stringify({error:'模型未返回正文，本次未交付。',code:'LLM_EMPTY_RESPONSE',retryable:false,stream_delivery:'buffered',stream_delivery_reason:'non_stream_requested'}),{status:422,headers:{'Content-Type':'application/json','X-Stream-Delivery':'buffered','X-Stream-Delivery-Reason':'non_stream_requested'}});
   }
   if (protectPrompt && containsPromptLeak(result.content, ctx.messages.filter(m=>m.role==='system').map(m=>messageText(m.content)).join('\n'))) {
     return new Response(JSON.stringify({error:'回复未通过内部信息保护检查，本次未交付。',code:'PROMPT_OUTPUT_BLOCKED',retryable:false,stream_delivery:'buffered',stream_delivery_reason:'non_stream_requested'}),{status:422,headers:{'Content-Type':'application/json','X-Stream-Delivery':'buffered','X-Stream-Delivery-Reason':'non_stream_requested'}});
+  }
+  if (!hasDeliveredUsage(tokenUsage)) {
+    return Response.json(missingUsageReceipt, { status: 503, headers: { "X-Stream-Delivery": "buffered" } });
   }
   try {
     const settlement = await settleLlmUsage(

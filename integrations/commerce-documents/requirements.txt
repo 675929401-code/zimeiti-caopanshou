@@ -1,0 +1,7 @@
+openpyxl==3.1.5
+python-docx==1.2.0
+pypdf==6.13.1
+pypdfium2==5.0.0
+rapidocr-onnxruntime==1.4.4
+beautifulsoup4==4.14.3
+defusedxml==0.7.1

@@ -18,6 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { notifyPaymentCredited, paymentPollDelay, readPaymentWallet, watchCheckoutReload } from "@/lib/payment-wallet-client";
+import { CASH_RECHARGE_STEP_YUAN, RECHARGE_MAX_YUAN, RECHARGE_MIN_YUAN, rechargeAmountError, rechargeCreditsForAmount, normalizeRechargeAmount } from "@/lib/recharge-amount";
+import styles from "./recharge-card.module.css";
 import { reportPaymentCreateFailed, reportPaymentCallbackMissing } from "@/lib/diagnostic-sentry";
 import { Input } from "@/components/ui/input";
 import { Coins, Wallet, CreditCard, Loader2, CheckCircle2, XCircle, ArrowLeft, RefreshCw } from "lucide-react";
@@ -36,10 +39,6 @@ interface RechargeDialogProps {
 
 // 积分充值默认值（动态从API读取覆盖）
 const DEFAULT_CREDITS_PER_YUAN = 50; // 1元=50积分 → 100元=5000积分
-const CREDITS_MIN_YUAN = 100; // 最低100元起充
-
-// 现金充值：最低10元
-const CASH_MIN_YUAN = 10;
 
 // 支付方式类型
 interface PaymentMethodConfig {
@@ -131,6 +130,27 @@ function currentPaymentIdempotencyKey(): string | undefined {
   }
 }
 
+function shouldClosePaymentCode(order: { status?: string; settlement_status?: string; expire_at?: string | null }) {
+  return order.status === "reconciliation_required" || order.settlement_status === "reconciliation_required"
+    || order.status === "expired" || order.status === "failed"
+    || (typeof order.expire_at === "string" && Date.parse(order.expire_at) <= Date.now());
+}
+
+function CheckoutQr({ paymentUrl, imageUrl }: { paymentUrl: string; imageUrl: string }) {
+  const [imageState, setImageState] = useState<"loading" | "ready" | "failed">("loading");
+  const [attempt, setAttempt] = useState(0);
+  return <div className="relative flex h-[200px] w-[200px] items-center justify-center">
+    {imageState !== "ready" && (paymentUrl
+      ? <QRCodeSVG value={paymentUrl} size={200} level="M" marginSize={4} title="支付二维码" />
+      : imageState === "failed"
+        ? <Button variant="outline" onClick={() => { setImageState("loading"); setAttempt(value => value + 1); }}>重新加载二维码</Button>
+        : <span role="status" className="text-sm text-gray-600">正在加载支付二维码…</span>)}
+    {imageUrl && <img key={attempt} src={imageUrl} alt="支付二维码"
+      className={`absolute inset-0 h-full w-full ${imageState === "ready" ? "" : "invisible"}`}
+      onLoad={() => setImageState("ready")} onError={() => setImageState("failed")} />}
+  </div>;
+}
+
 export function RechargeDialog({
   open,
   onOpenChange,
@@ -165,15 +185,22 @@ export function RechargeDialog({
     qrcodeUrl: string;
     payAmount: number;
     payType: string;
+    creditsAmount: number | null;
     methodLabel: string;
     idempotencyKey: string;
   } | null>(null);
   const [pollingStatus, setPollingStatus] = useState<"polling" | "paid" | "expired" | "timeout" | "reconciliation">("polling");
+  const [paymentCodeClosed, setPaymentCodeClosed] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStoppedRef = useRef(false);
+  const checkoutEpoch = useRef(0);
   // React state alone cannot stop two clicks in the same render frame. Keep a
   // synchronous lock so one user action can create at most one provider order.
   const createInFlightRef = useRef(false);
+
+  useEffect(() => {
+    if (open && paymentView !== "form" && qrcodeData) return watchCheckoutReload(qrcodeData.tradeOrderId);
+  }, [open, paymentView, qrcodeData]);
 
   // Read the same public exchange rate and payment configuration as checkout.
   useEffect(() => {
@@ -216,6 +243,8 @@ export function RechargeDialog({
   // 弹窗关闭时重置状态
   useEffect(() => {
     if (!open) {
+      checkoutEpoch.current++;
+      setCheckingBalance(false);
       setPaymentView("form");
       setQrcodeData(null);
       setResult(null);
@@ -226,9 +255,14 @@ export function RechargeDialog({
         pollTimerRef.current = null;
       }
     }
+    return () => {
+      checkoutEpoch.current++;
+      pollStoppedRef.current = true;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
   }, [open]);
 
-  const activeTab = tab;
+  const activeTab = mode === "both" ? tab : mode;
 
   // 积分充值：金额选项（元），100元=5000积分
   const creditPresets = [100, 200, 500, 1000];
@@ -236,20 +270,12 @@ export function RechargeDialog({
   const cashPresets = [10, 50, 100, 200, 500, 1000];
 
   // 计算实际支付金额（元）
-  const getPayAmount = (): number => {
-    if (!customAmount) return 0;
-    const val = parseFloat(customAmount);
-    if (isNaN(val) || val <= 0) return 0;
-    if (activeTab === "credits") {
-      if (val < CREDITS_MIN_YUAN) return 0;
-      return val;
-    }
-    if (val < CASH_MIN_YUAN) return 0;
-    return val;
-  };
+  const normalizedAmount = normalizeRechargeAmount(Number(customAmount));
+  const amountError = rechargeAmountError(activeTab, normalizedAmount);
+  const payAmount = amountError ? 0 : normalizedAmount ?? 0;
 
   // 根据支付金额计算获得的积分
-  const getCreditsFromYuan = (yuan: number): number => yuan * creditsPerYuan;
+  const getCreditsFromYuan = (yuan: number): number => rechargeCreditsForAmount(yuan, creditsPerYuan);
 
   const handlePresetClick = (amount: number) => {
     setCustomAmount(String(amount));
@@ -257,100 +283,64 @@ export function RechargeDialog({
   };
 
   const handleTabChange = (newTab: "credits" | "cash") => {
+    if (createInFlightRef.current) return;
     setTab(newTab);
     setCustomAmount("");
     setResult(null);
   };
 
-  // 从服务器刷新余额（含重试机制）
-  const refreshBalance = useCallback(async (type: string) => {
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const token = localStorage.getItem("auth_token");
-        const authUser = localStorage.getItem("auth_user");
-        const userId = authUser ? JSON.parse(authUser).id : null;
-        if (!userId || !token) {
-          console.warn("[refreshBalance] 缺少认证信息，跳过刷新");
-          return;
-        }
-
-        const res = await fetch(`/api/credits?user_id=${userId}&include_transactions=0`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        
-        if (!res.ok) {
-          console.warn(`[refreshBalance] API返回${res.status}，第${attempt}次重试`);
-          if (attempt < maxRetries) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-            continue;
-          }
-          return;
-        }
-        
-        const data = await res.json();
-        // 严格按充值类型刷新对应余额，双轨计费系统隔离
-        if (type === "credits") {
-          if (onCreditsUpdated && data.credits !== undefined) {
-            onCreditsUpdated(data.credits);
-          }
-        } else if (type === "cash") {
-          if (onCashUpdated && data.cashBalance !== undefined) {
-            onCashUpdated(data.cashBalance);
-          }
-        }
-        return; // 成功，退出重试循环
-      } catch (err) {
-        console.warn(`[refreshBalance] 第${attempt}次刷新失败:`, err);
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 1000 * attempt));
-        }
+  const refreshBalance = useCallback(async (type: string, token: string) => {
+    notifyPaymentCredited(token);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (localStorage.getItem("auth_token") !== token) return;
+      const balance = await readPaymentWallet(token);
+      if (balance) {
+        if (type === "credits") onCreditsUpdated?.(balance.credits);
+        if (type === "cash") onCashUpdated?.(balance.cashBalance);
+        return;
       }
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
     }
   }, [onCreditsUpdated, onCashUpdated]);
 
   // 轮询订单状态
   const startPolling = useCallback((tradeOrderId: string, type: string, idempotencyKey?: string) => {
     const stableIdempotencyKey = idempotencyKey || currentPaymentIdempotencyKey();
-    let tries = 0;
-    const maxTries = 60; // 最多轮询60次，约3分钟
+    const epoch = ++checkoutEpoch.current;
+    const token = localStorage.getItem("auth_token");
+    const current = () => epoch === checkoutEpoch.current && Boolean(token) && localStorage.getItem("auth_token") === token;
+    const startedAt = Date.now();
     pollStoppedRef.current = false;
 
     const poll = async () => {
-      if (pollStoppedRef.current || tries >= maxTries) {
-        if (!pollStoppedRef.current) {
-          setPollingStatus("timeout");
-        }
-        return;
-      }
-      tries++;
+      if (!current() || pollStoppedRef.current) return;
 
       try {
-        const token = localStorage.getItem("auth_token");
         const res = await fetch(
           `/api/payment/status?order=${tradeOrderId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(12_000) }
         );
         const data = await res.json();
 
+        if (!current() || !token || pollStoppedRef.current) return;
+        if (!res.ok || data.order?.trade_order_id !== tradeOrderId || data.order.type !== type) throw new Error("ORDER_STATUS_UNAVAILABLE");
+        if (shouldClosePaymentCode(data.order)) setPaymentCodeClosed(true);
         if (data.order?.status === "paid" && data.order?.balance_credited === true) {
           pollStoppedRef.current = true;
           if (stableIdempotencyKey) clearPaymentIdempotencyKey(stableIdempotencyKey);
           setPollingStatus("paid");
           setPaymentView("success");
-          refreshBalance(type);
+          void refreshBalance(type, token);
           // 2秒后自动关闭弹窗返回主界面
-          setTimeout(() => {
-            onOpenChange(false);
+          pollTimerRef.current = setTimeout(() => {
+            if (current()) onOpenChange(false);
           }, 2000);
           return;
         }
 
         if (data.order?.status === "reconciliation_required"
           || data.order?.settlement_status === "reconciliation_required") {
-          pollStoppedRef.current = true;
           setPollingStatus("reconciliation");
-          return;
         }
 
         if (data.order?.status === "failed" || data.order?.status === "expired") {
@@ -364,23 +354,25 @@ export function RechargeDialog({
         // 轮询出错继续
       }
 
-      pollTimerRef.current = setTimeout(poll, 3000);
+      if (current() && !pollStoppedRef.current) pollTimerRef.current = setTimeout(poll, paymentPollDelay(startedAt));
     };
 
-    // 首次轮询2秒后发起（加速主动检测介入），后续3秒间隔
+    // 首次两秒后查单，核对中继续等待同一订单的到账流水。
     pollTimerRef.current = setTimeout(poll, 2000);
   }, [refreshBalance, onOpenChange]);
 
   const handleRecharge = async () => {
     if (createInFlightRef.current) return;
 
-    const payAmount = getPayAmount();
     const selectedMethod = paymentMethods.find(m => m.id === paymentMethod && m.available);
     if (payAmount <= 0 || !paymentConfigReady || !selectedMethod || (activeTab === "credits" && !creditsConfigReady)) {
       setResult({ success: false, message: "充值配置尚未就绪，请稍后重试或联系管理员" });
       return;
     }
 
+    const epoch = checkoutEpoch.current;
+    const token = localStorage.getItem("auth_token");
+    if (!token) { setResult({ success: false, message: "请先登录后充值" }); return; }
     createInFlightRef.current = true;
     setLoading(true);
     setResult(null);
@@ -391,7 +383,6 @@ export function RechargeDialog({
       const provider = selectedMethod.provider;
       const methodLabel = selectedMethod.label;
 
-      const token = localStorage.getItem("auth_token");
       const authUser = localStorage.getItem("auth_user");
       let userId = "unknown";
       try {
@@ -410,6 +401,7 @@ export function RechargeDialog({
       const idempotencyKey = getOrCreatePaymentIdempotencyKey(paymentIntent);
       const res = await fetch("/api/payment/create", {
         method: "POST",
+        signal: AbortSignal.timeout(30_000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -426,14 +418,22 @@ export function RechargeDialog({
 
       const data = await res.json();
 
-      if (data.paymentUrl || data.qrcodeUrl) {
+      if (epoch !== checkoutEpoch.current || !token || localStorage.getItem("auth_token") !== token) return;
+      if (res.ok && typeof data.tradeOrderId === "string" && data.tradeOrderId && (data.paymentUrl || data.qrcodeUrl)) {
+        if (data.type !== activeTab || Number(data.amount) !== payAmount ||
+          (activeTab === "credits" ? !Number.isSafeInteger(data.creditsAmount) || data.creditsAmount <= 0 : data.creditsAmount != null)) {
+          setResult({ success: false, message: "订单与所选充值账户或金额不一致。请在个人中心的充值记录核对本单。" });
+          return;
+        }
         // 切换到二维码支付视图
+        setPaymentCodeClosed(false);
         setQrcodeData({
           tradeOrderId: data.tradeOrderId,
           paymentUrl: data.paymentUrl || "",
           qrcodeUrl: data.qrcodeUrl || "",
-          payAmount,
-          payType: activeTab,
+          payAmount: Number(data.amount),
+          payType: data.type,
+          creditsAmount: activeTab === "credits" && Number(data.creditsAmount) > 0 ? Number(data.creditsAmount) : null,
           methodLabel,
           idempotencyKey,
         });
@@ -452,6 +452,7 @@ export function RechargeDialog({
         reportPaymentCreateFailed(activeTab || "credits", data.error || "创建订单失败");
       }
     } catch {
+      if (checkoutEpoch.current !== epoch || localStorage.getItem("auth_token") !== token) return;
       setResult({ success: false, message: "网络错误，请重试" });
       reportPaymentCreateFailed(activeTab || "credits", "网络错误，创建订单异常");
     } finally {
@@ -463,46 +464,68 @@ export function RechargeDialog({
   // 手动刷新余额检查（二维码页面的刷新按钮）
   const handleManualCheck = async () => {
     if (!qrcodeData) return;
+    const epoch = ++checkoutEpoch.current;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     setCheckingBalance(true);
     try {
       const token = localStorage.getItem("auth_token");
       // 先查订单状态；后端按支付渠道核验回调或平台订单证据。
       const res = await fetch(`/api/payment/status?order=${qrcodeData.tradeOrderId}`, {
+        signal: AbortSignal.timeout(12_000),
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
+      if (epoch !== checkoutEpoch.current || !token || localStorage.getItem("auth_token") !== token) return;
+      if (!res.ok || data.order?.trade_order_id !== qrcodeData.tradeOrderId || data.order.type !== qrcodeData.payType) throw new Error("ORDER_STATUS_UNAVAILABLE");
+      if (shouldClosePaymentCode(data.order)) setPaymentCodeClosed(true);
       if (data.order?.status === "paid" && data.order?.balance_credited === true) {
         clearPaymentIdempotencyKey(qrcodeData.idempotencyKey);
         setPollingStatus("paid");
         setPaymentView("success");
-        void refreshBalance(qrcodeData.payType);
-        setTimeout(() => {
-          onOpenChange(false);
+        pollStoppedRef.current = true;
+        void refreshBalance(qrcodeData.payType, token);
+        pollTimerRef.current = setTimeout(() => {
+          if (epoch === checkoutEpoch.current && localStorage.getItem("auth_token") === token) onOpenChange(false);
         }, 2000);
         return;
       }
       if (data.order?.status === "reconciliation_required"
         || data.order?.settlement_status === "reconciliation_required") {
-        pollStoppedRef.current = true;
         setPollingStatus("reconciliation");
+        setCheckingBalance(false);
+        startPolling(qrcodeData.tradeOrderId, qrcodeData.payType, qrcodeData.idempotencyKey);
         return;
       }
       // 订单证据是唯一成功依据。不能用“余额增加”推断当前订单成功，
       // 因为管理员加款或另一笔充值也会改变余额并造成错误归因。
-      setPollingStatus("polling");
+      if (data.order?.status === "expired" || data.order?.status === "failed") {
+        clearPaymentIdempotencyKey(qrcodeData.idempotencyKey);
+        pollStoppedRef.current = true;
+        setPollingStatus("expired");
+        return;
+      }
+      setPollingStatus("timeout");
       if (data.order?.status === "pending") {
         if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        startPolling(qrcodeData.tradeOrderId, qrcodeData.payType);
+        setCheckingBalance(false);
+        setPollingStatus("polling");
+        startPolling(qrcodeData.tradeOrderId, qrcodeData.payType, qrcodeData.idempotencyKey);
       }
     } catch {
-      // 查询失败
+      if (epoch === checkoutEpoch.current) {
+        setPollingStatus("polling");
+        setCheckingBalance(false);
+        startPolling(qrcodeData.tradeOrderId, qrcodeData.payType, qrcodeData.idempotencyKey);
+      }
     } finally {
-      setCheckingBalance(false);
+      if (epoch === checkoutEpoch.current) setCheckingBalance(false);
     }
   };
 
   // 返回充值表单
   const handleBackToForm = () => {
+    checkoutEpoch.current++;
+    setCheckingBalance(false);
     pollStoppedRef.current = true;
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current);
@@ -513,7 +536,6 @@ export function RechargeDialog({
     setPollingStatus("polling");
   };
 
-  const payAmount = getPayAmount();
 
   // 获取当前选中支付方式的标签
   const selectedMethodObj = paymentMethods.find(m => m.id === paymentMethod);
@@ -524,7 +546,7 @@ export function RechargeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px] p-0 overflow-hidden">
+      <DialogContent className={`sm:max-w-[460px] p-0 gap-0 overflow-y-auto ${styles.cashier}`}>
         {/* ========== 表单视图 ========== */}
         {paymentView === "form" && (
           <>
@@ -532,7 +554,7 @@ export function RechargeDialog({
             <DialogHeader className="px-6 pt-6 pb-0">
               <DialogTitle className="flex items-center gap-2 text-lg">
                 <CreditCard className="w-5 h-5 text-[var(--primary)]" />
-                充值中心
+                {mode === "both" ? "充值中心" : activeTab === "cash" ? "现金充值" : "积分充值"}
               </DialogTitle>
             </DialogHeader>
 
@@ -568,8 +590,7 @@ export function RechargeDialog({
 
             {/* 余额展示 — 统一卡片 */}
             <div className="px-6 pt-3">
-              <div className="rounded-xl p-3 border border-[var(--border)]"
-                style={{ background: "color-mix(in srgb, var(--primary) 8%, transparent)" }}>
+              <div className={styles.balance}>
                 <div className="flex items-center gap-4">
                   {showCreditsTab && (
                     <div className={`flex-1 ${showCashTab ? "border-r border-[var(--border)] pr-4" : ""}`}>
@@ -597,27 +618,26 @@ export function RechargeDialog({
             <div className="px-6 pt-2">
               <p className="text-xs text-[var(--text-secondary)]">
                 {activeTab === "credits"
-                  ? `积分用于智能体对话、配音等服务，100元 = ${getCreditsFromYuan(100).toLocaleString()}积分，最低${CREDITS_MIN_YUAN}元起充`
-                  : `现金用于视频/封面生成，最低${CASH_MIN_YUAN}元起充`}
+                  ? `积分充值 ${RECHARGE_MIN_YUAN.credits} 元起。当前 100元 = ${getCreditsFromYuan(100).toLocaleString()}积分。`
+                  : `现金充值 ${RECHARGE_MIN_YUAN.cash} 元起，金额须为 ${CASH_RECHARGE_STEP_YUAN} 元的倍数。`}
               </p>
             </div>
 
             {/* 快捷金额 */}
             <div className="px-6 pt-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className={styles.amounts} data-wallet={activeTab} role="group" aria-label="快捷金额">
                 {(activeTab === "credits" ? creditPresets : cashPresets).map((preset) => (
                   <button
                     key={preset}
-                    className={`py-2.5 rounded-lg text-sm font-medium border transition-all ${
-                      customAmount === String(preset)
-                        ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
-                        : "border-[var(--border)] hover:border-[var(--primary)]/50 text-[var(--foreground)]"
-                    }`}
+                    type="button"
+                    aria-pressed={payAmount === preset}
+                    aria-label={activeTab === "credits" ? `¥${preset} → ${getCreditsFromYuan(preset).toLocaleString()}积分` : `¥${preset}`}
+                    className={styles.denomination}
                     onClick={() => handlePresetClick(preset)}
                   >
-                    {activeTab === "credits"
-                      ? `¥${preset} → ${getCreditsFromYuan(preset).toLocaleString()}积分`
-                      : `¥${preset}`}
+                    <strong>¥{preset}</strong>
+                    {activeTab === "credits" && <small>{getCreditsFromYuan(preset).toLocaleString()} 积分</small>}
+                    {payAmount === preset && <CheckCircle2 aria-hidden="true" className={styles.selectedMark} />}
                   </button>
                 ))}
               </div>
@@ -631,11 +651,17 @@ export function RechargeDialog({
                 </span>
                 <Input
                   type="number"
+                  aria-label="自定义充值金额"
+                  aria-invalid={Boolean(customAmount && amountError)}
+                  aria-describedby={customAmount && amountError ? "recharge-amount-error" : undefined}
                   placeholder="输入金额（元）"
+                  inputMode={activeTab === "cash" ? "numeric" : "decimal"}
+                  step={activeTab === "cash" ? CASH_RECHARGE_STEP_YUAN : 0.01}
+                  max={RECHARGE_MAX_YUAN}
                   value={customAmount}
                   onChange={(e) => { setCustomAmount(e.target.value); setResult(null); }}
                   className="pl-8 pr-12 h-10"
-                  min={activeTab === "credits" ? CREDITS_MIN_YUAN : CASH_MIN_YUAN}
+                  min={RECHARGE_MIN_YUAN[activeTab]}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]">
                   元
@@ -649,8 +675,8 @@ export function RechargeDialog({
                 </p>
               )}
               {customAmount && payAmount <= 0 && (
-                <p className="text-xs mt-1.5 text-red-500">
-                  {activeTab === "credits" ? `最低${CREDITS_MIN_YUAN}元起充` : `最低${CASH_MIN_YUAN}元起充`}
+                <p role="status" id="recharge-amount-error" className={styles.amountError}>
+                  {amountError}
                 </p>
               )}
             </div>
@@ -771,44 +797,15 @@ export function RechargeDialog({
                 <p className="text-3xl font-bold text-[var(--foreground)] mt-1">
                   ¥{qrcodeData.payAmount.toFixed(2)}
                 </p>
+                <p className="text-sm">{qrcodeData.payType === "cash"
+                  ? `到账 ¥${qrcodeData.payAmount.toFixed(2)} 现金余额`
+                  : `到账 ${qrcodeData.creditsAmount?.toLocaleString("zh-CN")} 积分`}</p>
               </div>
 
-              {/* 二维码区域 */}
+              {!paymentCodeClosed && <section aria-label="扫码支付">
               <div className="flex justify-center mb-4">
                 <div className="relative bg-white rounded-xl p-4 shadow-sm">
-                  {/* 如果有qrcodeUrl(迅虎支付返回的图片)，使用图片；否则用QRCodeSVG生成 */}
-                  {qrcodeData.qrcodeUrl ? (
-                    <img
-                      src={qrcodeData.qrcodeUrl}
-                      alt="支付二维码"
-                      className="w-[200px] h-[200px]"
-                    />
-                  ) : (
-                    <QRCodeSVG
-                      value={qrcodeData.paymentUrl}
-                      size={200}
-                      level="H"
-                      includeMargin={false}
-                      imageSettings={
-                        currentMethodIcon === "wechat"
-                          ? {
-                              src: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj48cGF0aCBkPSJNOC42OTEgMi4xODhDMy44OTEgMi4xODggMCA1LjQ3NiAwIDkuNTNjMCAyLjIxMiAxLjE3IDQuMjAzIDMuMDAyIDUuNTVhLjU5LjU5IDAgMCAxIC4yMTMuNjY1bC0uMzkgMS40OGMtLjAxOS4wNy0uMDQ4LjE0MS0uMDQ4LjIxMyAwIC4xNjMuMTMuMjk1LjI5LjI5NWEuMzI2LjMyNiAwIDAgMCAuMTY3LS4wNTRsMS45MDMtMS4xMTRhLjg2NC44NjQgMCAwIDEgLjcxNy0uMDk4IDEwLjE2IDEwLjE2IDAgMCAwIDIuODM3LjQwM2MuMjc2IDAgLjU0My0uMDI3LjgxMS0uMDVhNi4xNTggNi4xNTggMCAwIDEtLjIzNS0xLjY3NmMwLTMuNzkzIDMuNTI3LTYuODcgNy44NzktNi44Ny4yNDMgMCAuNDgyLjAxMi43MTguMDMxQzE3LjA4NCA0LjYzNSAxMy4yMjcgMi4xODggOC42OTEgMi4xODh6bS0yLjg3IDQuNDAxYS45OTQuOTk0IDAgMSAxIDAgMS45ODguOTk0Ljk5NCAwIDAgMSAwLTEuOTg4em01Ljc0MiAwYS45OTQuOTk0IDAgMSAxIDAgMS45ODguOTk0Ljk5NCAwIDAgMSAwLTEuOTg4ek0xNi44OCA5LjE4OGMtMy44NjggMC03LjAwNSAyLjY2Ni03LjAwNSA1Ljk1MyAwIDMuMjg2IDMuMTM3IDUuOTUyIDcuMDA1IDUuOTUyLjc4IDAgMS41NC0uMTEzIDIuMjctLjMxNmEuNzE3LjcxNyAwIDAgMSAuNTg2LjA3OGwxLjQ3OC44NjlhLjI2NC4yNjQgMCAwIDAgLjEzNy4wNDRjLjEzMSAwIC4yNC0uMTA4LjI0LS4yNCAwLS4wNTktLjAyMy0uMTE3LS4wMzktLjE3NGwtLjMwNS0xLjE0N2EuNDg4LjQ4OCAwIDAgMSAuMTc1LS41NDZDMjMuMDE2IDE4LjU1MyAyNCAxNi45MzIgMjQgMTUuMTRjMC0zLjI4Ny0zLjEzNy01Ljk1My03LjEyLTUuOTUzem0tMi43OSAzLjMzOGEuODIzLjgyMyAwIDEgMSAwIDEuNjQ2LjgyMy44MjMgMCAwIDEgMC0xLjY0NnptNS41OCAwYS44MjMuODIzIDAgMSAxIDAgMS42NDYuODIzLjgyMyAwIDAgMSAwLTEuNjQ2eiIgZmlsbD0iIzA3YzE2MiIvPjwvc3ZnPg==",
-                              height: 32,
-                              width: 32,
-                              excavate: true,
-                            }
-                          : undefined
-                      }
-                    />
-                  )}
-                  {/* 支付方式图标叠加 */}
-                  {qrcodeData.qrcodeUrl && currentMethodIcon === "wechat" && (
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm border border-gray-100">
-                      <svg viewBox="0 0 24 24" className="w-6 h-6 fill-[#07c160]">
-                        <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05a6.158 6.158 0 0 1-.235-1.676c0-3.793 3.527-6.87 7.879-6.87.243 0 .482.012.718.031C17.084 4.635 13.227 2.188 8.691 2.188zm-2.87 4.401a.994.994 0 1 1 0 1.988.994.994 0 0 1 0-1.988zm5.742 0a.994.994 0 1 1 0 1.988.994.994 0 0 1 0-1.988z"/>
-                      </svg>
-                    </div>
-                  )}
+                  <CheckoutQr key={qrcodeData.tradeOrderId} paymentUrl={qrcodeData.paymentUrl} imageUrl={qrcodeData.qrcodeUrl} />
                 </div>
               </div>
 
@@ -835,12 +832,14 @@ export function RechargeDialog({
                 </p>
               </div>
 
+              </section>}
+
               {/* 轮询状态 */}
               <div className="flex items-center justify-center gap-2 mb-3">
                 {pollingStatus === "polling" && (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--primary)]" />
-                    <span className="text-xs text-[var(--text-secondary)]">等待支付确认中...</span>
+                    <span className="text-xs text-[var(--text-secondary)]">{paymentCodeClosed ? "正在核对本单到账结果，请勿重复支付" : "等待支付确认中..."}</span>
                   </>
                 )}
                 {pollingStatus === "expired" && (
@@ -852,20 +851,20 @@ export function RechargeDialog({
                 {pollingStatus === "timeout" && (
                   <>
                     <XCircle className="w-3.5 h-3.5 text-yellow-500" />
-                    <span className="text-xs text-yellow-600">确认超时，如已支付请点击下方按钮查询到账结果</span>
+                    <span role="status" className="text-xs text-yellow-600">暂未确认到账。可刷新本单或稍后在个人中心查看，请勿重复支付。</span>
                   </>
                 )}
                 {pollingStatus === "reconciliation" && (
                   <>
-                    <XCircle className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-xs text-amber-600">支付记录已收到，但到账证据仍在核对，请勿重复支付</span>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                    <span role="status" className="text-xs text-amber-600">正在核对{qrcodeData.payType === "credits" ? "积分" : "现金"}到账结果，请勿重复支付</span>
                   </>
                 )}
               </div>
 
               {/* 操作按钮 */}
               <div className="flex gap-2">
-                {(pollingStatus === "timeout" || pollingStatus === "expired") && (
+                {pollingStatus === "expired" && (
                   <Button
                     variant="outline"
                     className="flex-1 h-9 text-sm"
@@ -917,7 +916,7 @@ export function RechargeDialog({
                 {qrcodeData.payType === "credits" ? "积分充值" : "现金充值"} ¥{qrcodeData.payAmount.toFixed(2)}
               </p>
             )}
-            <p className="text-green-400 text-sm mb-4">余额已自动到账，即将返回主页面...</p>
+            <p role="status" className="text-green-600 text-sm mb-4">{qrcodeData?.payType === "credits" ? "积分已到账" : "现金已到账"}，即将关闭。</p>
             <Button
               className="bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
               onClick={() => onOpenChange(false)}

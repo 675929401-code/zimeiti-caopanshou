@@ -21,6 +21,8 @@ const files = [
   'src/lib/member-permissions.ts',
   'src/contexts/app-context.tsx',
   'src/lib/auth-route-boundary.ts',
+  'src/lib/auth-session-notice.ts',
+  'src/lib/client-bootstrap-cache.ts',
 ];
 const sources = Object.fromEntries(files.map(file => [file, readFileSync(path.join(projectRoot, file), 'utf8')]));
 const compile = source => ts.transpileModule(source, {
@@ -61,7 +63,8 @@ virtual['next/navigation']={usePathname:()=>testPath,useRouter:()=>testRouter};
 virtual['@/components/feature-coming-soon-gate']={FeatureComingSoonOverlay:props=>React.createElement('div',{'data-testid':'coming-soon'},props.title)};
 virtual['lucide-react']={ShieldAlert:()=>null};window.ActualBoundary=load('${boundary}');
 `;
-const browser = await chromium.launch({ headless: true });
+const channel = process.env.PLAYWRIGHT_BROWSER_CHANNEL;
+const browser = await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
 const context = await browser.newContext();
 let networkRequests = 0;
 await context.route('**/*', route => { networkRequests++; return route.abort(); });
@@ -173,14 +176,20 @@ function visit(node) {
 visit(tree);
 assert.ok(authCallback, 'ACTUAL_APP_PROVIDER_AUTH_CALLBACK_REQUIRED');
 const authOwnerCases = [];
-for (const { name, token, status, pathname } of [
-  { name: 'no-token-private', token: null, status: 0, pathname: '/video' },
-  { name: 'expired-token', token: 'ram-expired', status: 401, pathname: '/video' },
-  { name: 'revoked-token', token: 'ram-revoked', status: 403, pathname: '/video' },
-  { name: 'deleted-owner', token: 'ram-deleted', status: 404, pathname: '/video' },
-  { name: 'public-home', token: null, status: 0, pathname: '/' },
+for (const { name, token, status, code, pathname = '/video', keep = false, html = false } of [
+  { name: 'no-token-private', token: null },
+  { name: 'expired-token', token: 'ram-expired', status: 401, code: 'UNAUTHENTICATED' },
+  { name: 'revoked-token', token: 'ram-revoked', status: 401, code: 'SESSION_REVOKED' },
+  { name: 'blocked-account', token: 'ram-blocked', status: 403, code: 'USER_BLOCKED' },
+  { name: 'deleted-owner', token: 'ram-deleted', status: 404, code: 'USER_NOT_FOUND' },
+  { name: 'proxy-unauthorized-page', token: 'ram-proxy', status: 401, html: true, keep: true },
+  { name: 'generic-forbidden', token: 'ram-forbidden', status: 403, code: 'FORBIDDEN', keep: true },
+  { name: 'proxy-missing-route', token: 'ram-missing', status: 404, keep: true },
+  { name: 'rate-limited', token: 'ram-rate', status: 429, code: 'RATE_LIMITED', keep: true },
+  { name: 'temporary-auth-outage', token: 'ram-unavailable', status: 503, code: 'AUTH_AUTHORITY_UNAVAILABLE', keep: true },
+  { name: 'public-home', token: null, pathname: '/' },
 ]) {
-  const stored = new Map(token ? [['AUTH_TOKEN', token]] : []);
+  const stored = new Map(token ? [['AUTH_TOKEN', token], ['AUTH_USER', '{"id":"owner"}']] : []);
   const redirects = [], actions = [];
   const sandbox = vm.createContext({
     exports: {}, window: { location: { pathname } },
@@ -188,19 +197,32 @@ for (const { name, token, status, pathname } of [
     safeGet: key => stored.get(key) || null,
     safeRemove: key => stored.delete(key), safeSet: (key, value) => stored.set(key, value),
     invalidateClientBootstrapAuthMe() {},
-    getClientBootstrapAuthMe: async actualToken => { assert.equal(actualToken, token); return new Response('{}', { status }); },
+    fetch: async (url, options) => {
+      assert.equal(url, '/api/auth/me');
+      assert.equal(options.headers.Authorization, 'Bearer ' + token);
+      return new Response(html ? '<html>Proxy unavailable</html>' : JSON.stringify({ code }), { status });
+    },
     clearStoredAuthSession: () => stored.clear(),
     dispatch: action => actions.push(action),
     replaceWithPublicHome: reason => redirects.push({ pathname: '/', hasReason: Boolean(reason) }),
   });
   vm.runInContext(compile(sources[files[4]]), sandbox);
   sandbox.shouldReturnUnauthenticatedVisitorHome = sandbox.exports.shouldReturnUnauthenticatedVisitorHome;
-  vm.runInContext(compile(`globalThis.runAuth=${authCallback};`), sandbox);
+  sandbox.exports = {};
+  vm.runInContext(compile(sources[files[5]]), sandbox);
+  const noticeModule = sandbox.exports;
+  sandbox.require = name => {
+    assert.equal(name, './auth-session-notice');
+    return noticeModule;
+  };
+  vm.runInContext(compile(sources[files[6]]), sandbox);
+  sandbox.getClientBootstrapAuthMe = sandbox.exports.getClientBootstrapAuthMe;
+  vm.runInContext(compile('globalThis.runAuth=' + authCallback + ';'), sandbox);
   await sandbox.runAuth(false);
-  const publicHome = pathname === '/';
-  assert.equal(redirects.length, publicHome ? 0 : 1, name);
-  assert.equal(stored.has('AUTH_TOKEN'), false, name);
-  assert.ok(actions.some(action => action.type === (token ? 'FORCED_LOGOUT' : 'SET_AUTH')), name);
+  assert.equal(redirects.length, pathname === '/' || keep ? 0 : 1, name);
+  assert.equal(stored.has('AUTH_TOKEN'), keep, name);
+  assert.equal(actions.some(action => action.type === 'FORCED_LOGOUT'), Boolean(token && !keep), name);
+  if (keep) assert.ok(actions.some(action => action.type === 'SET_AUTH' && action.payload.user.id === 'owner'), name);
   authOwnerCases.push({ name, passed: true, redirected: redirects.length === 1, completed: true });
 }
 

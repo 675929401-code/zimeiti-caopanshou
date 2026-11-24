@@ -1,0 +1,88 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  gap: 1rem;
+}
+.card {
+  --wallet-tint: color-mix(in srgb, var(--primary) 68%, #7999ee);
+  min-width: 0;
+  padding: 1.1rem 1.25rem .95rem;
+  border: 1px solid var(--border);
+  border-radius: .95rem;
+  color: var(--card-foreground);
+  background: linear-gradient(115deg, color-mix(in srgb, var(--wallet-tint) 6%, var(--card)), var(--card) 70%);
+  font-variant-numeric: tabular-nums;
+}
+.card[data-wallet="cash"] {
+  --wallet-tint: color-mix(in srgb, var(--card-foreground) 20%, #c89a60);
+}
+.header, .main, .header h2, .redeem, .recharge {
+  display: flex;
+  align-items: center;
+}
+.header, .main { justify-content: space-between; gap: .75rem; }
+.header h2 { gap: .55rem; margin: 0; font-size: .9375rem; font-weight: 640; }
+.icon {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--wallet-tint) 14%, var(--card));
+  color: color-mix(in srgb, var(--card-foreground) 40%, var(--wallet-tint));
+}
+.icon svg { width: 1.05rem; height: 1.05rem; }
+.redeem {
+  gap: .1rem;
+  padding: .35rem 0 .35rem .35rem;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  font-size: .75rem;
+  cursor: pointer;
+}
+.redeem svg { width: .8rem; height: .8rem; }
+.redeem:hover { color: var(--card-foreground); text-decoration: underline; }
+.main { flex-wrap: wrap; margin: .75rem 0 .95rem; }
+.balance {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: .15rem;
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -.035em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.currency { font-size: 1.05rem; font-weight: 550; }
+.unit { margin-left: .2rem; font-size: .75rem; font-weight: 450; letter-spacing: normal; color: var(--text-secondary); }
+.recharge {
+  justify-content: center;
+  gap: .35rem;
+  min-height: 2.25rem;
+  padding: .35rem .8rem;
+  border: 1px solid transparent;
+  border-radius: .5rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: .875rem;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.recharge svg { width: .9rem; height: .9rem; }
+.recharge:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent); }
+.recharge:focus-visible, .redeem:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border);
+}
+.totals > div + div { border-left: 1px solid var(--border); padding-left: 1rem; }
+.totals dt { color: var(--text-secondary); font-size: .75rem; }
+.totals dd { margin: .15rem 0 0; font-size: .875rem; font-weight: 580; overflow-wrap: anywhere; }

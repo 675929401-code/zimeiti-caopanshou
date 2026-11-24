@@ -25,6 +25,11 @@ function config(modelName = "doubao-seedance-2-5-260628"): VideoModelConfig {
 
 async function main() {
   const base = config();
+  const flash = config("doubao-seedance-2-5-flash-261115");
+  const flashInput = { prompt: "展示牛仔夹克的翻领与缝线", duration: 4, resolutionTier: "720p", aspectRatio: "9:16" };
+  assert.equal(doubaoSeedanceTaskBody(flash, flashInput).model, flash.model_name);
+  assert.throws(() => doubaoSeedanceTaskBody(flash, { ...flashInput, resolutionTier: "1080p" }), /720p/);
+  assert.throws(() => doubaoSeedanceTaskBody(flash, { ...flashInput, duration: 31 }), /30/);
   const mixed = doubaoSeedanceTaskBody(base, {
     prompt: "Use the supplied references to make a cinematic scene.",
     imageUrl: "https://example.com/first.png",

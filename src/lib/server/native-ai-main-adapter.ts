@@ -1,3 +1,4 @@
+import { BillingCatalogRequest } from "@/lib/server/member-model-catalog";
 import "server-only";
 import { NextRequest } from "next/server";
 import type { getSupabase } from "@/lib/api-middleware";
@@ -28,8 +29,8 @@ export function nativeAiMoney(value: number): string {
 function notReady(message: string): never { throw new PublishingError("NATIVE_AI_MODEL_NOT_READY", message, 409); }
 async function catalog(kind: "plan_text" | "generate_image" | "generate_video", modelId: string): Promise<Row> {
   const response = kind === "plan_text" ? await (await import("@/app/api/chat-models/route")).GET()
-    : kind === "generate_image" ? await (await import("@/app/api/cover-models/route")).GET(new Request("http://native.internal/api/cover-models?surface=publish-center-image"))
-      : await (await import("@/app/api/video/models/route")).GET(new Request("http://native.internal/api/video/models?surface=publish-center-video"));
+    : kind === "generate_image" ? await (await import("@/app/api/cover-models/route")).GET(new BillingCatalogRequest("http://native.internal/api/cover-models?surface=publish-center-image"))
+      : await (await import("@/app/api/video/models/route")).GET(new BillingCatalogRequest("http://native.internal/api/video/models?surface=publish-center-video"));
   if (!response.ok) throw new PublishingError("NATIVE_AI_CATALOG_UNAVAILABLE", "主站模型目录暂不可读取", 503);
   const payload = object(await response.json()), selected = [...records(payload.models), ...records(payload.unavailableModels)].find(item => item.id === modelId);
   if (!selected) notReady("所选模型不在当前主站目录中，请刷新模型列表");
@@ -88,7 +89,7 @@ export async function compileNativeAiMainAction(db: DB, ownerId: string, actionI
     const references: string[] = [];
     for (const ref of tool.args.referenceAssets) { await (deps.imageReference ?? readNativeMainMedia)(db, ownerId, ref); references.push(nativeOwnedImageInput(ref)); }
     if (tool.kind === "generate_image") {
-      const costPrice = resolveImageResolutionPrice(model, tool.args.resolution, "cost"), sellingPrice = resolveImageResolutionPrice(model, tool.args.resolution, "selling");
+      const costPrice = resolveImageResolutionPrice(model, tool.args.resolution, "cost", references.length), sellingPrice = resolveImageResolutionPrice(model, tool.args.resolution, "selling", references.length);
       if (!Number.isFinite(costPrice) || !Number.isFinite(sellingPrice)) notReady("当前图片规格没有有效主站单价");
       pricing = { mode: "local", resolution: tool.args.resolution.toUpperCase(), costPrice, sellingPrice, imageCount: 1 }; amount = sellingPrice * tool.args.count;
       for (let slot = 0; slot < tool.args.count; slot++) {

@@ -1,3 +1,4 @@
+import { BillingCatalogRequest } from "@/lib/server/member-model-catalog";
 import { GET as coverModelCatalog } from "@/app/api/cover-models/route";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { storageManager } from "@/storage/object";
@@ -146,7 +147,7 @@ export async function readCoverOriginalSourceDimensions(userId: string, material
 }
 
 export async function coverImageSelection(requestUrl: string, materials: CoverPrepareInput) {
-  const response = await coverModelCatalog(new Request(new URL("/api/cover-models?surface=cover-studio", requestUrl)));
+  const response = await coverModelCatalog(new BillingCatalogRequest(new URL("/api/cover-models?surface=cover-studio", requestUrl)));
   const payload = object(await response.json());
   const models = parseCoverModelCatalog(payload.models);
   const model = models.find(entry => entry.id === materials.modelId);

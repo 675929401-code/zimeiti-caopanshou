@@ -18,6 +18,11 @@ async function main(){
     const store=await import('../src/commerce/server/store');
     const billing=await import('../src/commerce/server/billing');
     const freeLocalModel:Model={id:'model-fixture-free-local',displayName:'Fixture Free Local',kind:'image',source:'custom',publicPrice:0,costPrice:0,billingUnit:'per_use',configHash:'fixture-free-local-v1',capabilities:{explicitlyFree:true}};
+    const tieredVideo:Model={...freeLocalModel,kind:'video',billingUnit:'output_second',publicPrice:0.86436,costPrice:0.7203,secondRates:{defaultResolution:'720p',sale:{'480p':0.43176,'720p':0.86436},cost:{'480p':0.3598,'720p':0.7203}}};
+    assert.equal(billing.quotePrice({kind:'video',duration:2,resolution:'480p'},tieredVideo),0.86);
+    assert.equal(billing.quoteCost({kind:'video',duration:2,resolution:'480p'},tieredVideo),0.7196);
+    assert.equal(billing.quotePrice({kind:'video',duration:2},tieredVideo),1.73);
+    assert.throws(()=>billing.quotePrice({kind:'video',duration:2,resolution:'1080p'},tieredVideo),/分辨率/);
     const paidModel:Model={...freeLocalModel,id:'model-fixture-paid',displayName:'Fixture Paid',publicPrice:0.5,costPrice:0.25,configHash:'fixture-paid-v1',capabilities:{}};
     const base={id:'11111111-1111-4111-8111-111111111111',owner:'local-owner',input:{kind:'image'},model:freeLocalModel} as unknown as Job;
     store.put('models',freeLocalModel.id,'system',{...freeLocalModel,enabled:true});

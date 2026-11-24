@@ -3,8 +3,8 @@ import { AppRouteShell } from "@/components/app-route-shell";
 import { RechargeCompatPage } from "@/features/official-compat/official-compat-pages";
 
 export const metadata: Metadata = {
-  title: "积分充值",
-  description: "使用自媒体操盘手现有支付、积分与卡密能力。",
+  title: "我的余额",
+  description: "查看当前积分和现金余额。",
 };
 
 export default function RechargePage() {

@@ -1,4 +1,5 @@
 import type {DepthMentionDocument} from './depth-reference-mentions';
+import {classifyDepthCloneModel, validateSourceVideoDimensions} from './depth-video-clone-model-profiles';
 import type {Model} from './models';
 import {videoReferenceImageLimit} from './video-reference-capabilities';
 import {COMMERCE_VIDEO_MAX_TOTAL_DURATION} from '../shared/video-generation-capabilities';
@@ -6,7 +7,7 @@ export const DEPTH_PURPOSE='depth-video-clone.generate';
 export const DEPTH_MODEL_CAPABILITY_REQUIREMENTS={supportsSourceVideoInput:true,supportsImageInput:true,supportsGenerateAudioToggle:true} as const;
 export type DepthRole='product'|'person'|'background'|'voice';
 export type DepthReference={id:string;slot:DepthRole};
-export type DepthConfig={modelId:string;duration:number|null;aspectRatio:string;resolution:string;generateAudio:boolean;extraInstruction:string;mentions:DepthMentionDocument};
+export type DepthConfig={elementMode?:boolean;modelId:string;duration:number|null;aspectRatio:string;resolution:string;generateAudio:boolean;extraInstruction:string;mentions:DepthMentionDocument};
 export const defaultDepthConfig:DepthConfig={modelId:'',duration:null,aspectRatio:'9:16',resolution:'720p',generateAudio:true,extraInstruction:'',mentions:{text:'',mentions:[]}};
 export type DepthSource={assetId:string;sha256:string;name:string;type:string;bytes:number;durationSeconds:number;startTimestampSeconds:number;width:number;height:number;fps:number;frameCount:number;hasAudioTrack:boolean};
 export type DepthPrepared={id:string;version:string;source:DepthSource;clip:{sha256:string;bytes:number;durationSeconds:number;hasAudioTrack:boolean};range:{mode:'leading';start:0;end:number};facts:{audioUnderstanding:'unknown';sourceBlackSegments:{start:number;end:number}[];clipBlackTail:boolean};createdAt:number};
@@ -14,7 +15,7 @@ export type DepthPreparation={id:string;status:'queued'|'running'|'succeeded'|'f
 export type DepthSession={id:string;owner:string;contextId:string;revision:number;createdAt:number;updatedAt:number;sourceAssetId:string|null;sourceSha256:string|null;sourceSnapshot?:DepthSource;references:DepthReference[];config:DepthConfig;preparation?:DepthPreparation;activeJobId?:string;history:string[];favoriteJobIds:string[];error?:string};
 export type DepthSnapshot={sessionId:string;revision:number;source:DepthSource;prepared:DepthPrepared;references:(DepthReference&{sha256:string;name:string;type:string;bytes:number})[];config:DepthConfig;retrySourceJobId?:string};
 export function depthDuration(source:number,requested?:number|null){if(!Number.isFinite(source)||source<4||source>COMMERCE_VIDEO_MAX_TOTAL_DURATION+0.4+1e-9)throw Error(`参考视频实际时长必须为4–${COMMERCE_VIDEO_MAX_TOTAL_DURATION}秒（最多0.4秒尾差）`);const limit=Math.min(COMMERCE_VIDEO_MAX_TOTAL_DURATION,Math.max(4,Math.floor(source+1e-6)));if(requested===null||requested===undefined)return limit;if(!Number.isInteger(requested)||requested<4||requested>limit)throw Error('输出时长必须为4到'+limit+'秒的整数，使用原片开头区间');return requested;}
-export function depthConfig(value:unknown):DepthConfig{const c=value as DepthConfig;if(!c||typeof c!=='object'||typeof c.modelId!=='string'||c.modelId.length>200||c.duration!==null&&(!Number.isInteger(c.duration)||c.duration<4||c.duration>COMMERCE_VIDEO_MAX_TOTAL_DURATION)||!['21:9','16:9','4:3','1:1','3:4','9:16'].includes(c.aspectRatio)||!['480p','720p','1080p','2k','4k'].includes(String(c.resolution).toLowerCase())||typeof c.generateAudio!=='boolean'||typeof c.extraInstruction!=='string'||c.extraInstruction.length>4000)throw Error('深度复刻参数无效');return {...c,resolution:c.resolution.toLowerCase()};}
+export function depthConfig(value:unknown):DepthConfig{const c=value as DepthConfig;if(!c||typeof c!=='object'||typeof c.modelId!=='string'||c.modelId.length>200||c.duration!==null&&(!Number.isInteger(c.duration)||c.duration<4||c.duration>COMMERCE_VIDEO_MAX_TOTAL_DURATION)||!['21:9','16:9','4:3','1:1','3:4','9:16'].includes(c.aspectRatio)||!['480p','720p','1080p','2k','4k'].includes(String(c.resolution).toLowerCase())||typeof c.generateAudio!=='boolean'||typeof c.extraInstruction!=='string'||c.extraInstruction.length>4000)throw Error('深度复刻参数无效');if(c.elementMode!==undefined&&typeof c.elementMode!=='boolean')throw Error('复刻方式无效');return {...c,resolution:c.resolution.toLowerCase()};}
 export const depthImageIds=(refs:DepthReference[])=>['product','person','background'].flatMap(slot=>refs.filter(r=>r.slot===slot).map(r=>r.id));
 export function depthModelDurationOptions(capabilities:Record<string,unknown>,sourceDuration:number):number[]{
  const sourceLimit=Math.min(COMMERCE_VIDEO_MAX_TOTAL_DURATION,Math.max(4,Math.floor(sourceDuration+1e-6))),mode=String(capabilities.durationMode||'');
@@ -33,6 +34,7 @@ export function validateDepthModel(model:Model,snapshot:DepthSnapshot){const c=m
  if(c.supportsImageInput!==true&&c.supportsReferenceInput!==true)throw Error('此模型不支持人物、商品或环境替换图片');
  if(images.length>videoReferenceImageLimit(c))throw Error(`此模型最多支持 ${videoReferenceImageLimit(c)} 张替换图片`);
  if(hasVoice&&(c.supportsAudioInput!==true||Number(c.maxReferenceAudios||0)<1))throw Error('此模型不支持声音参考');
+ validateSourceVideoDimensions(classifyDepthCloneModel(model),snapshot.source.width,snapshot.source.height);
  if(!depthModelDurationOptions(c,snapshot.source.durationSeconds).includes(d))throw Error('此模型不支持所选原生时长；深度复刻不会把同一源视频重复分段生成');
  if(Array.isArray(c.aspectRatios)&&c.aspectRatios.length&&!c.aspectRatios.includes(snapshot.config.aspectRatio))throw Error('此模型不支持所选画幅');
  if(Array.isArray(c.resolutionOptions)&&c.resolutionOptions.length&&!c.resolutionOptions.some(r=>String(r).toLowerCase()===snapshot.config.resolution))throw Error('此模型不支持所选分辨率');

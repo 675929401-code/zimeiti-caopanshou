@@ -17,6 +17,7 @@ import {
 } from "@/lib/platform-configuration-contract";
 
 import { MODEL_MUTATION_REQUEST_UUID, normalizeCredentialMetadata, type PlatformCredentialChange, type PlatformCredentialMetadata } from "@/lib/server/platform-configuration-pending-credentials";
+import { appendAdminGovernanceAudit } from "@/lib/server/admin-governance-authority";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { LlmModelValidationError, llmModelValidationConfigurationHash } from "@/lib/llm-model-validation-gate";
 import { assertFreshVisionEvidence, visionCandidateBinding, visionCapabilityTransitions, visionConfigurationHash } from "@/lib/server/llm-vision-validation";
@@ -231,6 +232,48 @@ export async function readPlatformConfigurationRelease(kind: PlatformConfigurati
   const row = await release(kind, requireUuid(releaseIdValue, "配置版本 ID"));
   snapshotFromRow(kind, row);
   return row;
+}
+
+/**
+ * Discard one unpublished candidate by marking it failed. Published, current and
+ * superseded releases stay immutable; the database forbids deleting releases, so
+ * the audit trail keeps the row and the candidate disappears from the pending list.
+ */
+export async function discardPlatformConfigurationCandidate(
+  actorIdValue: string,
+  kind: PlatformConfigurationKind,
+  releaseIdValue: string,
+): Promise<{ releaseId: string }> {
+  const actorId = requireUuid(actorIdValue, "操作人 ID");
+  const releaseId = requireUuid(releaseIdValue, "配置版本 ID");
+  const row = await release(kind, releaseId);
+  const status = String(row.status || "");
+  if (row.is_current === true || !["draft", "validated"].includes(status)) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_RELEASE_IMMUTABLE", "只有未发布的候选可以丢弃");
+  }
+  const updated = await getSupabaseAdminClient()
+    .from(table(kind))
+    .update({ status: "failed" })
+    .eq("id", releaseId)
+    .eq("is_current", false)
+    .in("status", ["draft", "validated"])
+    .select("id,status");
+  if (updated.error) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_DISCARD_FAILED", `丢弃候选失败：${updated.error.message}`);
+  }
+  if (!Array.isArray(updated.data) || (updated.data as Row[]).length !== 1) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_DISCARD_REJECTED", "候选状态已变化，请刷新后重试");
+  }
+  await appendAdminGovernanceAudit({
+    actorId,
+    permissionKey: "models.manage",
+    action: "platform_configuration_candidate_discard",
+    result: "success",
+    reasonCode: "CANDIDATE_DISCARDED",
+    resource: kind,
+    metadata: { releaseId, releaseVersion: Number(row.release_version) || null },
+  });
+  return { releaseId };
 }
 
 async function currentRelease(kind: PlatformConfigurationKind): Promise<Row | null> {

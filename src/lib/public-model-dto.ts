@@ -36,7 +36,7 @@ const PUBLIC_CAPABILITY_KEYS = new Set([
   "showFirstFrame", "showLastFrame", "showReferenceImages", "showAudioInputs", "firstFrameRatioPolicy",
   "minReferenceImages", "minReferenceAudios",
   "durationMode", "minDuration", "maxDuration", "defaultDuration", "nativeDurations", "durationStep",
-  "resolutionTier", "resolutionOptions", "defaultResolution", "resolutionPrices", "resolutionLabels", "aspectRatios",
+  "resolutionTier", "resolutionOptions", "defaultResolution", "resolutionPrices", "referenceImageUnitPrice", "resolutionLabels", "aspectRatios",
   "requestPixelSizes", "verifiedOutputPixelSizes",
   "directVerifiedCombinations", "verificationNotice",
   // Keep the capability shape stable for existing workbenches, but sanitize
@@ -178,6 +178,9 @@ function sanitizeCapabilities(
       // Preserve the field shape, deriving only fixed public input/status
       // copy from an allowlisted code. Raw diagnostics are never forwarded.
       if (key === "readinessMessage" || key === "verificationNotice" || key === "availabilityMessage") {
+        if (key === "availabilityMessage" && capabilities.billingUnit === "token" && capabilities.priceReady === false) {
+          return [[key, "模型计费配置待确认，暂不可提交"] as const];
+        }
         return [[key, key === "verificationNotice" ? "" : publicMessage] as const];
       }
       if (key === "compatibilityCode") return [[key, compatibilityCode] as const];

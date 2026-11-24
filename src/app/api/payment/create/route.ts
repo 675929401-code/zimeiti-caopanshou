@@ -3,12 +3,14 @@
 // 本文件是支付订单创建 API。
 // 修改此文件需要用户明确同意，详见 AGENTS.md "🔒 锁定模块清单 #12 支付系统"。
 
+import { normalizeRechargeAmount, rechargeAmountError, rechargeCreditsForAmount } from "@/lib/recharge-amount";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { getTokenFromHeaders, verifyToken } from "@/lib/auth";
 import { createPayment as createXunhuPayment } from "@/lib/xunhupay";
 import { createPayment as createEPayPayment } from "@/lib/epay";
 import { getBillingConfig } from "@/lib/billing";
+import { callbackReachesLocalOrders } from "@/lib/local-payment-callback";
 import {
   claimPaymentOrderCreation,
   finalizePaymentOrderCreation,
@@ -34,13 +36,6 @@ interface ProviderOrderResult {
   paymentUrl: string;
   qrcodeUrl: string;
   platformOrderId: string | null;
-}
-
-function normalizeAmount(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
-  const cents = Math.round(value * 100);
-  if (!Number.isSafeInteger(cents) || Math.abs(value * 100 - cents) > 1e-8) return null;
-  return cents / 100;
 }
 
 function normalizeCallbackBaseUrl(rawValue: unknown): string | null {
@@ -163,7 +158,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json() as Record<string, unknown>;
     const type = body.type;
-    const normalizedAmount = normalizeAmount(body.amount);
+    const normalizedAmount = normalizeRechargeAmount(body.amount);
     const paymentMethodId = typeof body.paymentMethodId === "string" ? body.paymentMethodId.trim() : "";
     const paymentMethod = typeof body.paymentMethod === "string" ? body.paymentMethod.trim() : "";
     const requestedProvider = typeof body.provider === "string" ? body.provider.trim().toLowerCase() : "";
@@ -174,15 +169,8 @@ export async function POST(request: NextRequest) {
     if (paymentMethodId.length > 128 || paymentMethod.length > 64 || (requestedProvider && !["xunhupay", "epay"].includes(requestedProvider))) {
       return NextResponse.json({ error: "无效的支付方式" }, { status: 400 });
     }
-    if (type === "credits" && normalizedAmount < 100) {
-      return NextResponse.json({ error: "积分充值最低100元起充" }, { status: 400 });
-    }
-    if (type === "cash" && normalizedAmount < 10) {
-      return NextResponse.json({ error: "现金充值最低10元起充" }, { status: 400 });
-    }
-    if (normalizedAmount > 50000) {
-      return NextResponse.json({ error: "单笔充值金额不能超过5万元，如有大额需求请联系管理员" }, { status: 400 });
-    }
+    const amountError = rechargeAmountError(type, normalizedAmount);
+    if (amountError) return NextResponse.json({ error: amountError }, { status: 400 });
 
     const supabase = getSupabaseClient();
     const { data: methodData, error: methodError } = await supabase
@@ -223,7 +211,7 @@ export async function POST(request: NextRequest) {
     }
     let creditsAmount: number | null = null;
     if (type === "credits") {
-      const computedCredits = Math.floor(normalizedAmount * creditsPerYuan);
+      const computedCredits = rechargeCreditsForAmount(normalizedAmount, creditsPerYuan);
       if (!Number.isSafeInteger(computedCredits) || computedCredits <= 0) {
         console.error("[支付] creditsAmount 计算结果无效");
         return NextResponse.json({ error: "积分计费配置异常" }, { status: 503 });
@@ -250,8 +238,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "支付配置异常：回调域名无效，请联系管理员" }, { status: 503 });
     }
 
-    const tradeOrderId = paymentCreationTradeOrderId({ userId, idempotencyKey, type });
-    const notifyUrl = `${baseUrl}/api/payment/notify`;
+    const localPreview = process.env.LOCAL_ACCEPTANCE_PREVIEW === "true";
+    const tradeOrderId = paymentCreationTradeOrderId({ userId, idempotencyKey, type, localPreview });
+    const notifyUrl = baseUrl + (localPreview ? "/__preview-payment/notify" : "/api/payment/notify");
+    if (!await callbackReachesLocalOrders(notifyUrl)) {
+      return NextResponse.json({
+        code: "LOCAL_PAYMENT_CALLBACK_UNAVAILABLE",
+        error: "本机充值暂不可用，支付通知尚未接通。本次未发起支付。",
+      }, { status: 503 });
+    }
     const expireAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     const requestFingerprint = paymentOrderCreationFingerprint({
       type,
@@ -291,7 +286,7 @@ export async function POST(request: NextRequest) {
           ? `积分充值 ${record.creditsAmount}积分`
           : `现金充值 ¥${record.amount}`,
         notifyUrl,
-        returnUrl: `${baseUrl}/payment/result?order=${encodeURIComponent(record.tradeOrderId)}`,
+        returnUrl: localPreview ? baseUrl + "/__preview-payment/return" : `${baseUrl}/payment/result?order=${encodeURIComponent(record.tradeOrderId)}`,
         type: record.type,
         userId: record.userId,
       }),
@@ -338,6 +333,8 @@ export async function POST(request: NextRequest) {
       success: true,
       tradeOrderId: outcome.record.tradeOrderId,
       paymentUrl: providerOrder.paymentUrl,
+      type: outcome.record.type,
+      amount: outcome.record.amount,
       qrcodeUrl: providerOrder.qrcodeUrl,
       provider: paymentProvider,
       creditsAmount: outcome.record.creditsAmount,

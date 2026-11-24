@@ -43,6 +43,7 @@ interface ProtocolDef {
 }
 
 const PROTOCOL_REGISTRY: ProtocolDef[] = [
+  { id: "toapis_video", name: "ToAPIs · 视频生成", description: "按模型报价并查询原任务与用量", keywords: [], domains: ["toapis.com"], mode: "async", endpoint: "/v1/videos/generations" },
   { id: "secure_skill_kling_video", name: "Secure Skill · Kling", description: "POST /v1/videos → 同密钥 GET /v1/videos/{id}；参考图及混合参考", keywords: ["kling-video-v4"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/v1/videos" },
   { id: "secure_skill_doubao_seedance", name: "渠道 A · Seedance 官方 Token", description: "POST /api/v3/contents/generations/tasks → 同密钥 GET /api/v3/contents/generations/tasks/{task_id}", keywords: ["doubao-seedance-2-0", "doubao-seedance-2-5"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/api/v3/contents/generations/tasks" },
   { id: "secure_skill_enterprise_video", name: "Secure Skill · video-企业 · 分组16", description: "POST /v1/videos → 同密钥 GET /v1/videos/{task_id}；固定720p，支持图片和音频参考", keywords: ["video-2.0-fast", "video-2.0-pro"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/v1/videos" },

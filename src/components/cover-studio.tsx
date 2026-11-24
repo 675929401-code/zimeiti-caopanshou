@@ -984,7 +984,7 @@ function CoverStudioForAccount() {
       applyModelCatalog(freshModels);
       const currentModel = freshModels.find((model) => model.id === record.publicModelId);
       if (!currentModel?.available) throw new Error(currentModel?.availabilityMessage || "原模型当前不可用，不能载入重试");
-      if (!currentModel.priceReady || currentModel.price == null) throw new Error("原模型当前价格未就绪，不能载入重试");
+      if (!currentModel.priceReady) throw new Error("原模型当前价格未就绪，不能载入重试");
       const plan = record.renderPlan;
       const restoredMode: CoverModeId = plan?.coverModeId === "funny-cartoon" || record.prompt.includes("封面制作模式：卡通搞怪")
         ? "funny-cartoon" : "cartoon";
@@ -1020,8 +1020,7 @@ function CoverStudioForAccount() {
         referenceImageName: "",
       }) : "");
       setNotice(
-        "失败参数已载入，尚未调用模型。原报价 ¥" + Number(record.quotedPriceYuan || 0).toFixed(2)
-          + "，当前价格 ¥" + currentModel.price.toFixed(2) + "。"
+        "失败参数已载入，可核对后重新提交。"
           + (restoredSource === "upload" ? "原参考图仅保存安全哈希，请重新上传并再次拆解。" : restoredSource === "template" ? "参考模板会从平台模板库重新读取。" : "")
           + (plan ? "原文案、模式、版式和排版参数已恢复。" : "旧记录缺少完整排版快照，请重新拆解后再生成。"),
       );
@@ -1659,7 +1658,7 @@ function CoverStudioForAccount() {
               <WandSparkles size={17} />{generationBusy ? "正在创建任务" : "生成封面"}
             </button>
             <div className="cover-cost-line">
-              <span>预计消耗</span><strong>{activeModel?.available && activeModel.priceReady && activeModel.price != null ? `¥${activeModel.price.toFixed(2)}` : "价格待确认"}</strong><span>{balance === null ? "" : `余额 ¥${balance.toFixed(2)}`}</span>
+              <span>{balance === null ? "" : `余额 ¥${balance.toFixed(2)}`}</span>
             </div>
           </section>
         </aside>
@@ -1720,7 +1719,7 @@ function CoverStudioForAccount() {
                   <section className="cover-history-failure">
                     <div><strong>失败记录 · {new Date(selectedHistoryTask.createdAt).toLocaleString("zh-CN", { hour12: false })}</strong><span>{selectedHistoryTask.modelName} · {selectedHistoryTask.ratio}</span></div>
                     <p>{selectedHistoryTask.error}</p>
-                    <small>原报价 ¥{Number(selectedHistoryTask.quotedPriceYuan || 0).toFixed(2)} · {selectedHistoryTask.billing?.state === "not_charged" ? "明确未扣费" : selectedHistoryTask.billing?.state === "exempt" ? "未扣费" : selectedHistoryTask.billing?.state === "charged" ? "存在已扣费记录" : "账务待确认"}</small>
+                    <small>{selectedHistoryTask.billing?.state === "not_charged" ? "明确未扣费" : selectedHistoryTask.billing?.state === "exempt" ? "未扣费" : selectedHistoryTask.billing?.state === "charged" ? "存在已扣费记录" : "账务待确认"}</small>
                     {selectedHistoryTask.requiresReferenceReupload && <small>原参考图需重新上传。</small>}
                     {selectedHistoryTask.retryBlockReason && <small>{selectedHistoryTask.retryBlockReason}</small>}
                     <div>

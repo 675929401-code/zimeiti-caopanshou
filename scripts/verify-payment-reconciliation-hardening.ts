@@ -240,7 +240,7 @@ pass("payment method delete is now disable only", !methodsRoute.includes('.from(
 pass("payment method reference count avoids select star", methodsRoute.includes('.select("id", { count: "exact", head: true })')
   && !methodsRoute.includes('.select("*"'));
 
-const queryFunction = xunhu.slice(xunhu.indexOf("export async function queryOrderStatus"));
+const queryFunction = xunhu.slice(xunhu.indexOf("async function readQueryEnvelope"));
 pass("Xunhu query has timeout", queryFunction.includes("AbortSignal.timeout(XUNHU_QUERY_TIMEOUT_MS)")
   && xunhu.includes("const XUNHU_QUERY_TIMEOUT_MS = 10_000"));
 pass("Xunhu query response is byte bounded", queryFunction.includes("readBoundedGatewayResponse(response)")

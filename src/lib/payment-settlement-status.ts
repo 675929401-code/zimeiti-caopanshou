@@ -11,6 +11,7 @@ function text(value: unknown): string {
 }
 
 function finite(value: unknown): number | null {
+  if ((typeof value !== "string" && typeof value !== "number") || String(value).trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -50,11 +51,11 @@ export function evaluatePaidOrderSettlement(input: {
   const idempotencyKey = `payment:${tradeOrderId}`;
 
   const providerEvidenceComplete = Boolean(
-    tradeOrderId
+    tradeOrderId && userId && (finite(order.amount) ?? 0) > 0
     && text(order.payment_provider)
     && text(order.provider_trade_order_id) === tradeOrderId
     && text(order.provider_transaction_id)
-    && sameAmount(order.provider_paid_amount, order.amount, 2)
+    && finite(order.provider_paid_amount) === finite(order.amount)
     && text(order.provider_confirmed_at),
   );
   if (!providerEvidenceComplete) issueCodes.push("PROVIDER_CONFIRMATION_INCOMPLETE");
@@ -66,13 +67,16 @@ export function evaluatePaidOrderSettlement(input: {
   const operation = walletOperations.length === 1 ? walletOperations[0] : null;
   const operationMatches = Boolean(
     operation
+    && text(operation.id)
+    && text(operation.wallet) === orderType
     && text(operation.user_id) === userId
     && text(operation.status).toLowerCase() === "completed"
     && text(operation.operation_kind).toLowerCase() === expectedOperationKind
     && text(operation.idempotency_key) === idempotencyKey
     && sameAmount(operation.amount, expectedWalletAmount)
     && finite(operation.balance_before) != null
-    && finite(operation.balance_after) != null,
+    && sameAmount(operation.delta, expectedWalletAmount)
+    && sameAmount(operation.balance_after, Number(operation.balance_before) + Number(operation.amount)),
   );
   if (!operationMatches) issueCodes.push("COMPLETED_WALLET_OPERATION_MISSING");
 
@@ -80,6 +84,7 @@ export function evaluatePaidOrderSettlement(input: {
   const ledgerMatches = Boolean(
     operationMatches
     && ledger
+    && text(ledger.wallet) === orderType
     && text(ledger.operation_id) === text(operation?.id)
     && text(ledger.user_id) === userId
     && text(ledger.operation_kind).toLowerCase() === expectedOperationKind

@@ -1,3 +1,4 @@
+import { catalogRatesForMember, withoutCatalogRates } from "@/lib/server/member-model-catalog";
 /**
  * LLM 模型预设列表 API（公共）
  * GET - 列出所有活跃的 LLM 模型预设，供智能体创建/编辑表单选择
@@ -74,9 +75,10 @@ export async function GET(request: Request) {
       ...publicTextModelBillingCapabilities(model),
     }));
 
+    const project = await catalogRatesForMember(request) ? (model: PublicModelDto) => model : withoutCatalogRates;
     return NextResponse.json({
-      models: safeModels.filter((model: PublicModelDto) => model.capabilities.priceReady === true),
-      unavailableModels: safeModels.filter((model: PublicModelDto) => model.capabilities.priceReady !== true),
+      models: safeModels.filter((model: PublicModelDto) => model.capabilities.priceReady === true).map(project),
+      unavailableModels: safeModels.filter((model: PublicModelDto) => model.capabilities.priceReady !== true).map(project),
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[LLMModels] GET error:", error);

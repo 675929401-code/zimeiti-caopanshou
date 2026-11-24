@@ -1,14 +1,21 @@
+import {configuredImagePixelSizeFor} from '@/lib/image-output-contract';
+import {buildToApisStandardImagePayload, TOAPIS_STANDARD_IMAGE_CONTRACT, parseSecureSkillAsyncImageTask} from '@/lib/secure-skill-async-image-adapter';
+import type {ImageResolution} from '@/lib/image-model-capabilities';
+import {commerceImageRates} from '@/commerce/server/main-site-model-pricing';
+import { BillingCatalogRequest } from "@/lib/server/member-model-catalog";
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual, createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { findModelByPublicId } from '@/lib/public-model-dto';
+import {readVerifiedProviderFailure,type VerifiedProviderFailure} from '@/commerce/server/provider-failure-log';
 import { resolveProviderSecret } from '@/lib/provider-secret';
 import { buildOpenAIEndpoint } from '@/lib/api-endpoints';
 import { LLMProxy } from '@/lib/llm-proxy';
 import {llmProxyBindingConfig,resolveLlmProviderBinding} from '@/lib/llm-provider-contract';
 import {commerceChatImageBody,commerceChatImageResult} from '@/lib/commerce-image-protocol';
+import {commerceVideoParameters} from '@/commerce/server/video-media-parameters';
 import { submitVideoTask, pollVideoTask, type VideoModelConfig } from '@/lib/video-adapter';
 import { GET as imageCatalog } from '@/app/api/cover-models/route';
 import { GET as videoCatalog } from '@/app/api/video/models/route';
@@ -16,7 +23,8 @@ import { GET as textCatalog } from '@/app/api/llm-models/route';
 import {runtimeDir} from '@/commerce/server/store';
 import {inspectVideoModelActivationReadiness, stripClientActivationGate} from '@/lib/model-activation-gate';
 import {classifyProviderFailure,isExplicitImageProviderRejection} from '@/commerce/server/provider-failure-classification';
-import {commerceModelPricing} from '@/commerce/server/main-site-model-pricing';
+import { commerceModelPricing, commerceVideoSecondRates } from '@/commerce/server/main-site-model-pricing';
+import {commerceDetailQualityCapabilities,commerceDetailQualityPayload} from '@/lib/commerce-detail-image-protocol';
 import {resolveImageProviderContract} from '@/lib/image-provider-contract';
 
 export const runtime = 'nodejs';
@@ -61,6 +69,7 @@ type Receipt = {
   error?: string;
   providerAttestation?: ProviderAttestation;
   reconciliation?: ReceiptReconciliation;
+  verifiedFailure?:VerifiedProviderFailure;
 };
 type ReceiptLease = {
   receiptId: string;
@@ -207,8 +216,23 @@ async function releaseReceiptLease(lease: ReceiptLease) {
 const terminalReceipt = (value: Pick<Receipt, 'status'>) => ['success', 'failed', 'manual_reconciliation'].includes(value.status);
 const receiptStateRank = (value:Pick<Receipt,'status'>) => ({dispatching:0,queued:1,processing:2,unknown:3,success:4,failed:4,manual_reconciliation:4}[value.status] ?? 0);
 
-function mergeReceiptObservation(current: Receipt, candidate: Receipt, expectedRevision: number): Receipt {
-  if (terminalReceipt(current)) return current;
+function acknowledgedVideoNeedsReadback(receipt: Receipt) {
+  return receipt.kind==='video' && receipt.status==='manual_reconciliation'
+    && receipt.dispatchPhase==='acknowledged' && receipt.error==='PROVIDER_RESULT_UNCONFIRMED'
+    && typeof receipt.result?.taskId==='string' && !!receipt.result.taskId
+    && receipt.providerAttestation?.taskId===receipt.result.taskId
+    && receipt.providerAttestation.configHash===receipt.modelConfigHash;
+}
+function mergeReceiptObservation(current: Receipt, candidate: Receipt, expectedRevision: number, purpose: ReceiptLease['purpose']='transition'): Receipt {
+  const confirmedOriginal=purpose==='reconcile' && acknowledgedVideoNeedsReadback(current)
+    && current.revision===expectedRevision && candidate.status==='success'
+    && candidate.id===current.id && candidate.fingerprint===current.fingerprint
+    && candidate.modelId===current.modelId && candidate.modelConfigHash===current.modelConfigHash
+    && candidate.result?.taskId===current.result?.taskId && typeof candidate.result?.videoUrl==='string' && !!candidate.result.videoUrl;
+  const verifiedFailure=purpose==='reconcile' && current.kind==='image' && current.status==='manual_reconciliation' && current.dispatchPhase==='submission_unknown' && !current.providerAttestation?.taskId
+    && current.revision===expectedRevision && candidate.status==='failed' && candidate.fingerprint===current.fingerprint && candidate.id===current.id
+    && candidate.modelConfigHash===current.modelConfigHash && !!candidate.verifiedFailure && candidate.verifiedFailure.host===current.providerAttestation?.endpointHost;
+  if (terminalReceipt(current) && !confirmedOriginal && !verifiedFailure) return current;
   const candidateTerminal = terminalReceipt(candidate);
   if (current.revision !== expectedRevision && !candidateTerminal && receiptStateRank(candidate)<=receiptStateRank(current)) return current;
   const nextPhase = candidate.dispatchPhase === 'acknowledged' || current.dispatchPhase === 'acknowledged'
@@ -246,7 +270,7 @@ async function commitReceiptObservation(id: string, expectedRevision: number, ca
     try {
       await assertLeaseOwner(lease);
       const current = await load(id);
-      const next = mergeReceiptObservation(current, candidate, expectedRevision);
+      const next = mergeReceiptObservation(current, candidate, expectedRevision,purpose);
       if (next === current) return current;
       await assertLeaseOwner(lease);
       return await writeReceipt(next,lease);
@@ -345,7 +369,7 @@ async function markProviderRequestSent(receipt:Receipt,attestation?:ProviderAtte
 }
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id);
 async function catalog(kind: string, request: Request) {
-  const req = new Request(new URL(kind === 'image' ? '/api/cover-models?surface=commerce-agent' : kind === 'video' ? '/api/video/models?surface=commerce-agent' : '/api/llm-models', request.url));
+  const req = new BillingCatalogRequest(new URL(kind === 'image' ? '/api/cover-models?surface=commerce-agent' : kind === 'video' ? '/api/video/models?surface=commerce-production-library' : '/api/llm-models', request.url));
   return (await (kind === 'image' ? imageCatalog(req) : kind === 'video' ? videoCatalog(req) : textCatalog(req))).json();
 }
 async function modelFor(kind: string, id: string, request: Request): Promise<Row> {
@@ -356,7 +380,9 @@ async function modelFor(kind: string, id: string, request: Request): Promise<Row
   if (error) throw Error('MODEL_CONFIGURATION_UNAVAILABLE');
   const model = findModelByPublicId(kind === 'image' ? 'cover' : kind === 'video' ? 'video' : 'llm', data || [], id);
   if (!model) throw Error('MODEL_CONFIGURATION_UNAVAILABLE');
-  return { ...model, _capabilities: entry.capabilities, _commerceSnapshot: pricingSnapshot(kind, model, entry) };
+  const snapshot=pricingSnapshot(kind, model, entry);
+  if(snapshot.billingUnit==='token')throw Error('COMMERCE_TOKEN_SETTLEMENT_REQUIRED');
+  return { ...model, _capabilities: entry.capabilities, _commerceSnapshot: snapshot };
 }
 function stable(value:unknown):unknown {
   if(Array.isArray(value))return value.map(stable);
@@ -383,11 +409,16 @@ function commerceCanary(protocol:Row,kind:string,modelId:string,configHash:strin
   const gate=(protocol.__commerce_acceptance_gate&&typeof protocol.__commerce_acceptance_gate==='object'?protocol.__commerce_acceptance_gate:{}) as Row;
   return gate.state==='evidence_ready'&&gate.kind===kind&&String(gate.model_id||'')===modelId&&String(gate.config_hash||'')===configHash&&typeof gate.verified_at==='string'&&Number.isFinite(Date.parse(gate.verified_at))?String(gate.verified_at):null;
 }
+function needsPublicImageUrls(config?: Row) {
+  const protocol=config?.api_protocol_config as Row | undefined;
+  return protocol?.adapter_contract===TOAPIS_STANDARD_IMAGE_CONTRACT || (typeof protocol?.provider_channel==='string' && protocol.provider_channel.startsWith('secure-skill:'));
+}
 function pricingSnapshot(kind: string, config: Row, entry: Row) {
   const protocol = (config.api_protocol_config && typeof config.api_protocol_config === 'object' ? config.api_protocol_config : {}) as Row;
   const { billingUnit, costPrice, publicPrice } = commerceModelPricing(kind as 'agent'|'image'|'video', config, entry);
+  const secondRates=kind==='video'?commerceVideoSecondRates(config):undefined;
   const protocolWithoutEvidence=stripClientActivationGate(protocol);delete protocolWithoutEvidence.__commerce_acceptance_gate;
-  const configHash = createHash('sha256').update(JSON.stringify(stable({kind,id:config.id,modelName:config.model_name,provider:config.provider,protocol:config.protocol_type,endpoint:config.api_endpoint||config.proxy_url||'',credentialHash:credentialHash(config.api_key),protocolConfig:protocolWithoutEvidence,billingUnit,costPrice,publicPrice,capabilities:entry.capabilities||{}}))).digest('hex');
+  const configHash = createHash('sha256').update(JSON.stringify(stable({kind,id:config.id,modelName:config.model_name,provider:config.provider,protocol:config.protocol_type,endpoint:config.api_endpoint||config.proxy_url||'',credentialHash:credentialHash(config.api_key),protocolConfig:protocolWithoutEvidence,billingUnit,costPrice,publicPrice,...(secondRates && config.protocol_type==='toapis_video'?{secondRates}:{}),capabilities:entry.capabilities||{}}))).digest('hex');
   let verifiedAt=commerceCanary(protocol,kind,String(config.id||''),configHash);
   if(!verifiedAt&&kind==='video'){
     const readiness=inspectVideoModelActivationReadiness({id:String(config.id||''),model_name:config.model_name,provider:config.provider,protocol_type:config.protocol_type,api_endpoint:config.api_endpoint,api_key:config.api_key,api_protocol_config:config.api_protocol_config});
@@ -395,7 +426,7 @@ function pricingSnapshot(kind: string, config: Row, entry: Row) {
     const evidence=(gate.evidence&&typeof gate.evidence==='object'?gate.evidence:{}) as Row;
     if(readiness.gated&&readiness.ready&&typeof evidence.issued_at==='string')verifiedAt=String(evidence.issued_at);
   }
-  return { costPrice, publicPrice, billingUnit, configHash, verifiedAt };
+  return { costPrice, publicPrice, billingUnit, configHash, verifiedAt, ...(secondRates?{secondRates}:{}), ...(kind==='image'?{imageRates:commerceImageRates(config)}:{}) };
 }
 function supportsCommerceGenerateAudioToggle(config:Row|undefined):boolean{
   if(!config)return false;
@@ -417,7 +448,7 @@ export async function GET(request: NextRequest) {
       const evidence=await db.from('commerce_model_acceptance_evidence').select('model_kind,model_id,model_config_hash,verified_at').eq('model_kind',kind).eq('status','passed').in('model_config_hash',hashes);
       if(!evidence.error)accepted=new Map((evidence.data||[]).map((row:Row)=>[`${row.model_kind}:${row.model_id}:${row.model_config_hash}`,String(row.verified_at||'')]));
     }
-    return json({models:prepared.map(({entry,config,snapshot}:{entry:Row;config:Row|undefined;snapshot:{costPrice:number|null;publicPrice:number|null;billingUnit:string;configHash:string;verifiedAt:string|null}})=>{const unsupported=kind==='video'?/autodl|digital_human|retalk|wan_s2v/i.test(String(config?.protocol_type)):kind==='image'?/autodl/i.test(String(config?.provider)):false;const configuration=providerConfigurationReadiness(kind,config);const verifiedAt=accepted.get(`${kind}:${String(entry.id||'')}:${snapshot.configHash}`)||snapshot.verifiedAt;return {...entry,...snapshot,internalModelId:String(config?.id||''),modelName:String(config?.model_name||''),provider:String(config?.provider||''),verifiedAt:verifiedAt||null,capabilities:{...entry.capabilities as Row,...configuration,executionSupported:!!config&&!unsupported&&configuration.credentialsConfigured&&configuration.endpointConfigured&&configuration.protocolConfigured,...(kind==='video'?{supportsGenerateAudioToggle:supportsCommerceGenerateAudioToggle(config)}:{}),...(unsupported?{available:false,availabilityMessage:'该协议尚未接通主站模型桥接'}:{})}};})});
+    return json({models:prepared.map(({entry,config,snapshot}:{entry:Row;config:Row|undefined;snapshot:{costPrice:number|null;publicPrice:number|null;billingUnit:string;configHash:string;verifiedAt:string|null}})=>{const unsupported=kind==='video'?/autodl|digital_human|retalk|wan_s2v/i.test(String(config?.protocol_type)):kind==='image'?/autodl/i.test(String(config?.provider)):false;const configuration=providerConfigurationReadiness(kind,config);const verifiedAt=accepted.get(`${kind}:${String(entry.id||'')}:${snapshot.configHash}`)||snapshot.verifiedAt;return {...entry,...snapshot,internalModelId:String(config?.id||''),modelName:String(config?.model_name||''),provider:String(config?.provider||''),verifiedAt:verifiedAt||null,capabilities:{...entry.capabilities as Row,...configuration,...(kind==='image'&&config?commerceDetailQualityCapabilities(config):{}),...(kind==='image'&&(config?.api_protocol_config as Row | undefined)?.adapter_contract===TOAPIS_STANDARD_IMAGE_CONTRACT?{fixedImageQuality:'high',nativeImageContract:TOAPIS_STANDARD_IMAGE_CONTRACT}:{}),...(kind==='image'&&needsPublicImageUrls(config)?{requiresPublicImageUrls:true}:{}),executionSupported:!!config&&!unsupported&&configuration.credentialsConfigured&&configuration.endpointConfigured&&configuration.protocolConfigured,...(kind==='video'?{singleSourceVideoBridge:true,...(config?.protocol_type==='gaorui_video'&&['seedance-2.0','seedance-2.5'].includes(String(config.model_name))?{firstFrameInputOnly:true,showFirstFrame:true}:{}),supportsGenerateAudioToggle:supportsCommerceGenerateAudioToggle(config),...(config?.protocol_type==='secure_skill_enterprise_video'?{supportsSourceVideoInput:false}:{})}:{}),...(unsupported?{available:false,availabilityMessage:'该协议尚未接通主站模型桥接'}:{})}};})});
   }
   const id = request.nextUrl.searchParams.get('id');
   if (!id) return json({ application: 'main-model-capability', connected: true, shares: ['model-inference'], sharesBusinessData: false });
@@ -448,6 +479,17 @@ export async function POST(request: NextRequest) {
     const raw = await request.text(); if (Buffer.byteLength(raw) > 35_000_000) return json({error:'REQUEST_TOO_LARGE'},413);
     const input = JSON.parse(raw);
     if (!validId(input.id) || !['image','video','agent'].includes(input.kind) || typeof input.modelId !== 'string') return json({error:'INVALID_INPUT'},400);
+    if(input.action==='verify-failure-log'){
+      const original=await load(input.id);
+      if(original.kind!=='image'||original.modelId!==input.modelId||original.modelConfigHash!==input.modelConfigHash) return json({error:'原单身份不一致'},409);
+      if(original.status==='failed'&&original.verifiedFailure?.requestId===input.providerRequestId)return json(original);
+      if(original.status!=='manual_reconciliation'||original.dispatchPhase!=='submission_unknown'||original.providerAttestation?.taskId)return json({error:'原单不满足失败核验条件'},409);
+      const model=await modelFor(original.kind,original.modelId,request);
+      if(!original.providerAttestation||String(model.id)!==original.providerAttestation.internal||String(model.model_name)!==original.providerAttestation.submitted)return json({error:'模型身份已变更'},409);
+      const evidence=await readVerifiedProviderFailure(original,String(model.api_endpoint||model.proxy_url||''),resolveProviderSecret(String(model.api_key||'')),String(input.providerRequestId||''),String(input.operatorId||''));
+      const candidate:Receipt={...original,status:'failed',error:'PROVIDER_VERIFIED_ZERO_CHARGE',verifiedFailure:evidence,reconciliation:undefined};
+      return json(await commitReceiptObservation(original.id,original.revision,candidate,'reconcile'));
+    }
     if(input.action==='probe'){
       const model=await modelFor(input.kind,input.modelId,request);
       const endpoint=String(model.api_endpoint||model.proxy_url||'');const key=resolveProviderSecret(String(model.api_key||''));
@@ -459,7 +501,8 @@ export async function POST(request: NextRequest) {
     if (input.action === 'poll') {
       receipt = await reconcileStaleReceipt(await load(input.id));
       if (receipt.kind !== input.kind || receipt.modelId !== input.modelId) return json({error:'REQUEST_MISMATCH'},409);
-      if (!['image','video'].includes(receipt.kind) || receipt.dispatchPhase !== 'acknowledged' || !['processing','queued'].includes(receipt.status) || !receipt.result?.taskId) return json(receipt);
+      const originalReadback=acknowledgedVideoNeedsReadback(receipt);
+      if (!['image','video'].includes(receipt.kind) || receipt.dispatchPhase !== 'acknowledged' || (!originalReadback&&!['processing','queued'].includes(receipt.status)) || !receipt.result?.taskId) return json(receipt);
       const observed = receipt;
       const model = await modelFor(receipt.kind, receipt.modelId, request);
       if(String((model._commerceSnapshot as Row | undefined)?.configHash||'')!==receipt.modelConfigHash){
@@ -473,20 +516,28 @@ export async function POST(request: NextRequest) {
           receipt=await commitReceiptObservation(observed.id,observed.revision,{...observed,status:observed.status,error:`IMAGE_PROVIDER_POLL_HTTP_${response.status}`},'poll');
           return json(receipt);
         }
-        const data=await response.json();const url=data.data?.[0]?.url;
-        if(!url&&data.status!=='failed')return json(receipt);
+        const data=await response.json();const parsed=parseSecureSkillAsyncImageTask(data);const url=parsed.imageUrl;
+        if(!url&&parsed.status!=='failed')return json(receipt);
         const taskIdValue=String(receipt.result.taskId);
         const candidate:Receipt=url
           ?{...observed,status:'success',result:{...observed.result,url,usage:data.usage},acknowledgedAt:observed.acknowledgedAt||Date.now(),terminalAt:Date.now(),providerAttestation:providerAttestation(observed,model,endpoint,data.model,taskIdValue)}
           :{...observed,status:'failed',error:'IMAGE_PROVIDER_FAILED',terminalAt:Date.now(),providerAttestation:providerAttestation(observed,model,endpoint,data.model,taskIdValue)};
         receipt=await commitReceiptObservation(observed.id,observed.revision,candidate,'poll');return json(receipt);
       }
-      const result = await pollVideoTask({ ...model, api_key: resolveProviderSecret(String(model.api_key || '')) } as unknown as VideoModelConfig, String(receipt.result.taskId), typeof receipt.result.contentUrl === 'string' ? receipt.result.contentUrl : undefined);
+      let result:Awaited<ReturnType<typeof pollVideoTask>>;
+      try {
+        result=await pollVideoTask({ ...model, api_key: resolveProviderSecret(String(model.api_key || '')) } as unknown as VideoModelConfig,String(receipt.result.taskId),typeof receipt.result.contentUrl==='string'?receipt.result.contentUrl:undefined);
+      } catch {
+        // A failed status GET says nothing about the original generation.
+        return json(observed);
+      }
+      if(originalReadback&&(result.status!=='success'||!result.videoUrl))return json(observed);
       const cleanResult:Row={...result};delete cleanResult.error;
       const nextStatus=String(result.status||observed.status);
       const candidate:Receipt={...observed,status:nextStatus,result:{...observed.result,...cleanResult},...(result.error?{error:'VIDEO_PROVIDER_POLL_UNCONFIRMED'}:{}),...(['success','failed'].includes(nextStatus)?{terminalAt:Date.now()}:{}),providerAttestation:providerAttestation(observed,model,String(model.api_endpoint||model.proxy_url||''),cleanResult.reportedModel||cleanResult.model,String(observed.result?.taskId||''))};
       if(nextStatus==='failed')candidate.error='VIDEO_PROVIDER_FAILED';
-      receipt=await commitReceiptObservation(observed.id,observed.revision,candidate,'poll'); return json(receipt);
+      if(nextStatus==='success'){candidate.error=undefined;candidate.reconciliation=undefined;}
+      receipt=await commitReceiptObservation(observed.id,observed.revision,candidate,originalReadback?'reconcile':'poll'); return json(receipt);
     }
     if (input.action !== 'invoke') return json({error:'INVALID_ACTION'},400);
     // Voice synthesis must not bypass the shared model catalog, immutable quote,
@@ -573,19 +624,24 @@ export async function POST(request: NextRequest) {
       receipt=await commitReceiptObservation(receipt.id,receipt.revision,{...receipt,result:{text:result.content,usage:result.usage,reportedModel:result.model},status:'success',dispatchPhase:'acknowledged',acknowledgedAt:Date.now(),terminalAt:Date.now()});
     } else if (input.kind === 'image') {
       if (/autodl/i.test(String(model.provider))) throw Error('IMAGE_PROTOCOL_NOT_CONNECTED');
-      const references = Array.isArray(input.images) ? input.images.filter((v: unknown) => typeof v === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(v)).slice(0,9) : [];
+      const requestedQuality=input.detailImageQuality;
+      if(requestedQuality!==undefined && (!Array.isArray(input.images)||input.images.length>9||input.images.some((url:unknown)=>typeof url!=='string'||!/^https:\/\//.test(url))))throw Error('DETAIL_IMAGE_REFERENCE_INVALID');
+      const publicUrls=requestedQuality!==undefined || needsPublicImageUrls(model);
+      const references: string[]=Array.isArray(input.images)?input.images:[];
+      const validReference=publicUrls?/^https:\/\//:/^data:image\/(png|jpeg|webp);base64,/;
+      if(references.some(url=>typeof url!=='string'||!validReference.test(url)))throw Error('IMAGE_REFERENCE_TRANSPORT_INVALID');
       const caps=model._capabilities as Row;
       if (references.length && !caps.supportsReferenceInput && !caps.supportsImageInput) throw Error('MODEL_REFERENCE_INPUT_UNSUPPORTED');
       if (references.length > Number(caps.maxReferenceImages || 1)) throw Error('TOO_MANY_REFERENCE_IMAGES');
-      const ratios: Record<string,string>={'1:1':'2048x2048','9:16':'1440x2560','16:9':'2560x1440','3:4':'1728x2304','4:3':'2304x1728','4:5':'1792x2240','5:4':'2240x1792','2:3':'1664x2496','3:2':'2496x1664'};
       const ratio=String(input.aspectRatio||'1:1'); const resolution=String(input.resolution||'2K');
       const imageContract=resolveImageProviderContract(model);
       const chatImage=imageContract.requestProtocol==='chat_completions';
       const nativeGemini=imageContract.requestProtocol==='google_generate_content';
       const asyncImages=imageContract.requestProtocol==='images_generations_async';
       if(imageContract.requestProtocol==='images_edits')throw Error('IMAGE_PROTOCOL_NOT_CONNECTED');
-      if(asyncImages&&references.length)throw Error('IMAGE_PROTOCOL_REFERENCE_NOT_CONNECTED');
-      const body=nativeGemini ? {contents:[{role:'user',parts:[{text:input.prompt},...references.map((url:string)=>{const match=url.match(/^data:([^;]+);base64,(.+)$/)!;return {inlineData:{mimeType:match[1],data:match[2]}};})]}],generationConfig:{responseModalities:['IMAGE'],imageConfig:{aspectRatio:ratio,imageSize:resolution}}} : {model:model.model_name,prompt:input.prompt,n:1,size:ratios[ratio]||ratios['1:1'],image_size:resolution,aspect_ratio:ratio,...(!asyncImages?{response_format:'url'}:{}),...(references.length?{image:references}:{}),...(!asyncImages?{watermark:false}:{})};
+      const providerSize=configuredImagePixelSizeFor(model.api_protocol_config,resolution as ImageResolution,ratio);
+      const toApisStandard=(model.api_protocol_config as Row | undefined)?.adapter_contract===TOAPIS_STANDARD_IMAGE_CONTRACT;
+      const body=toApisStandard ? buildToApisStandardImagePayload({modelName:String(model.model_name),prompt:String(input.prompt),resolution:resolution as ImageResolution,aspectRatio:ratio,pixelSize:providerSize,referenceImageUrls:references}) : requestedQuality!==undefined ? commerceDetailQualityPayload(model,{prompt:String(input.prompt),resolution,aspectRatio:ratio,quality:requestedQuality,references}) : nativeGemini ? {contents:[{role:'user',parts:[{text:input.prompt},...references.map((url:string)=>{const match=url.match(/^data:([^;]+);base64,(.+)$/)!;return {inlineData:{mimeType:match[1],data:match[2]}};})]}],generationConfig:{responseModalities:['IMAGE'],imageConfig:{aspectRatio:ratio,imageSize:resolution}}} : {model:model.model_name,prompt:input.prompt,n:1,...(asyncImages?{}:{size:providerSize}),image_size:resolution,aspect_ratio:ratio,...(!asyncImages?{response_format:'url'}:{}),...(references.length?(asyncImages?{image_urls:references}:{image:references}):{}),...(!asyncImages?{watermark:false}:{})};
       const target=chatImage?buildOpenAIEndpoint(endpoint,'chat/completions'):nativeGemini?new URL(`/v1beta/models/${encodeURIComponent(String(model.model_name))}:generateContent`,endpoint).href:buildOpenAIEndpoint(endpoint,'images/generations');
       receipt=await markProviderRequestSent(receipt,providerAttestation(receipt,model,endpoint));
       const response=await fetch(target,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`,...(nativeGemini?{'x-goog-api-key':key}:{}),'Idempotency-Key':input.id},body:JSON.stringify(chatImage?commerceChatImageBody(String(model.model_name),input.prompt,references,ratio,resolution):body),signal:AbortSignal.timeout(240000)});
@@ -593,8 +649,11 @@ export async function POST(request: NextRequest) {
       const data=await response.json(); let url=data.data?.[0]?.url || (data.data?.[0]?.b64_json?`data:image/png;base64,${data.data[0].b64_json}`:'');
       if(nativeGemini){const part=data.candidates?.[0]?.content?.parts?.find((p:Row)=>p.inlineData||p.inline_data);const inline=part?.inlineData||part?.inline_data;if(inline)url=`data:${inline.mimeType||inline.mime_type||'image/png'};base64,${inline.data}`;}
       if(chatImage)url=commerceChatImageResult(data);
-      if(!url&&data.id&&['in_progress','queued','processing'].includes(data.status)){
-        const taskId=String(data.id);
+      const asyncTask=asyncImages?parseSecureSkillAsyncImageTask(data):null;
+      if(asyncTask?.imageUrl)url=asyncTask.imageUrl;
+      const pendingTask=asyncTask?.id || data.id;
+      if(!url&&pendingTask&&(asyncTask?['queued','processing','unknown'].includes(asyncTask.status):['in_progress','queued','processing'].includes(data.status))){
+        const taskId=String(pendingTask);
         receipt=await commitReceiptObservation(receipt.id,receipt.revision,{...receipt,result:{taskId},status:'processing',dispatchPhase:'acknowledged',acknowledgedAt:Date.now(),providerAttestation:providerAttestation(receipt,model,endpoint,data.model,taskId)});
       }else{
         if(!url)throw Error('EMPTY_IMAGE_RESULT');
@@ -613,8 +672,11 @@ export async function POST(request: NextRequest) {
       if (videos.length&&!caps.supportsSourceVideoInput)throw Error('VIDEO_REFERENCE_UNSUPPORTED');
       if (caps.requiresSourceVideo&&!videos.length)throw Error('SOURCE_VIDEO_REQUIRED');
       if([...images,...audios,...videos].some((url:unknown)=>typeof url!=='string'||!url.startsWith('https://')))throw Error('PUBLIC_REFERENCE_URL_REQUIRED');
+      const config={...model,api_key:key} as unknown as VideoModelConfig;
+      const explicitFrames=input.videoFrameMode===true||(input.videoFrameMode===undefined&&caps.showLastFrame===true&&!videos.length&&!audios.length);
+      const params=commerceVideoParameters(config,{prompt:input.prompt,duration:Number(input.duration)||5,aspectRatio:String(input.aspectRatio||'9:16'),resolutionTier:String(input.resolution||'720p').toLowerCase(),generateAudio:input.generateAudio===undefined?undefined:input.generateAudio===true,idempotencyKey:input.id},{images,audios,videos},explicitFrames);
       receipt=await markProviderRequestSent(receipt,providerAttestation(receipt,model,endpoint));
-      const result=await submitVideoTask({...model,api_key:key} as unknown as VideoModelConfig,{prompt:input.prompt,imageUrl:images[0],imageUrls:images,lastFrameUrl:caps.showLastFrame?images[1]:undefined,sourceVideoUrl:videos[0],audioUrl:audios[0],audioUrls:audios,duration:Number(input.duration)||5,aspectRatio:String(input.aspectRatio||'9:16'),resolutionTier:String(input.resolution||'720p').toLowerCase(),generateAudio:input.generateAudio===undefined?undefined:input.generateAudio===true,idempotencyKey:input.id});
+      const result=await submitVideoTask(config,params);
       const cleanResult:Row={...result};delete cleanResult.error;
       const taskId=String(cleanResult.taskId||cleanResult.id||'')||undefined;
       if(result.submissionOutcome==='unknown'){

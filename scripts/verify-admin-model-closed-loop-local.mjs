@@ -58,7 +58,7 @@ export function assessWorkspaceReadback(beforeWorkspace, afterWorkspace, beforeP
 
 export async function resolveWorkspaceCatalogConsumers() {
   const policy = await tsImport('../src/lib/workspace-model-policy.ts', import.meta.url);
-  const consumers = ['src/components/cover-studio.tsx', 'src/components/storyboard-workbench.tsx', 'src/components/free-canvas-shell.tsx', 'src/app/video/page.tsx'];
+  const consumers = ['src/components/cover-studio.tsx', 'src/components/storyboard-workbench.tsx', 'src/components/free-canvas-shell.tsx', 'src/app/video/page.tsx', 'src/features/film-studio-project/film-studio-production-panel.tsx'];
   const found = new Map();
   for (const file of consumers) {
     const source = await fs.readFile(file, 'utf8');
@@ -70,7 +70,7 @@ export async function resolveWorkspaceCatalogConsumers() {
       found.set(surface, { surface, kind: definition.kind, path: match[1], source: file, sourceSha256: crypto.createHash('sha256').update(source).digest('hex') });
     }
   }
-  assert.equal(found.size, 7, 'SEVEN_NONEXCLUDED_ACTUAL_WORKSPACE_CONSUMERS_REQUIRED');
+  assert.deepEqual([...found.keys()].sort(), ['cover-studio', 'storyboard-image', 'storyboard-video', 'free-canvas-image', 'free-canvas-video', 'video-page', 'film-studio-image', 'film-studio-video'].sort(), 'ACTUAL_WORKSPACE_CATALOG_CONSUMERS_REQUIRED');
   return [...found.values()].sort((a, b) => a.surface.localeCompare(b.surface));
 }
 
@@ -229,7 +229,7 @@ export async function main(args = process.argv.slice(2)) {
       database: baselineDatabase, runtime: baselineRuntime, ordinaryUser: { id: expectedUserId, role: 'student' }, surfaceConsumers,
       oldCandidates: state.releases.map(rowIdentity), physicalHash: digest(baselinePhysical), ordinaryCatalogHash: digest(baselinePublic), target: { modelId, poolId: selected.id, beforeOrder: selected.sortOrder, afterOrder: newOrder } }, null, 2));
     if (!execute) { events.push({ plan: 'review required; no writes performed', baseline: rowIdentity(baseline), modelId, expectedMutation: 'one inactive text model sortOrder', restore: 'new rollback candidate targeting exact baseline, validate, preview, atomic publish, full snapshot and physical/public readback',
-      workspaceDependencyRisk: !!baselineWorkspace, workspaceWritesAuthorized: false, warning: baselineWorkspace ? 'Pool publication and rollback create new release identities. A historical workspace dependency is recorded as provenance, while exact workspace identity/snapshot, projected assignment/order settings and seven ordinary surface catalogs must remain unchanged.' : null }); await record(); return; }
+      workspaceDependencyRisk: !!baselineWorkspace, workspaceWritesAuthorized: false, warning: baselineWorkspace ? 'Pool publication and rollback create new release identities. A historical workspace dependency is recorded as provenance, while exact workspace identity/snapshot, projected assignment/order settings and the verified ordinary surface catalogs must remain unchanged.' : null }); await record(); return; }
     assert.equal(argument(args, 'baseline-release'), baseline.id, 'REVIEWED_BASELINE_ID_REQUIRED');
     assert.equal(argument(args, 'baseline-sha'), baseline.snapshot_sha256, 'REVIEWED_BASELINE_SHA_REQUIRED');
     const staged = await request('/api/admin/models', { method: 'PATCH', body: { model_type: 'text', orders: [{ id: modelId, sort_order: newOrder }] } });

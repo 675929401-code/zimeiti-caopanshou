@@ -1,0 +1,628 @@
+{
+  "ecommerce-spoken-selling": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-口播带货-20260909/完整脚本-拼合.md",
+      "sha256": "eae149519da11338139d89bbee2ca5d72491d706f57d7c262713a164a1f92bb8",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜截停痛点并引出抗老核心 → 镜头5｜12-15s｜锁定人群给出精准购买建议"
+    },
+    "caseStudy": {
+      "id": "461f248e-a8cc-444f-9ace-60116041806a",
+      "title": "伊菲丹防晒-koc视频",
+      "thumb": "/commerce/discovery/media/2de0d67e0e4dbf4e21ae72e5ac672841a33864dd702068cbb70ccc49250e01d6.jpg",
+      "reading": "读出镜人设、手边商品和家庭场景的职责，再核对口播与演示对应。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "95f6f7c91db4e0b1f56572e8aefa590f237d5a6abfd177a2219f2be72d329d58"
+    }
+  },
+  "ecommerce-promotion-conversion": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-促销转化-20260909/完整脚本-拼合.md",
+      "sha256": "69b0a45d896430ad32a9547d47b98ce42e9be1d1562d6c89a9dc50a317f2c5f1",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜截停痛点并引出核心防晒 → 镜头4｜11-15s｜锁定活动权益并发出明确行动号召"
+    },
+    "caseStudy": {
+      "id": "cd0df171-869e-4458-bf7d-c21e607889e2",
+      "title": "Tiktok视频生成",
+      "thumb": "/commerce/discovery/media/37397b82117af08c3ed9094c6ed262d0f43cd53b72c888e9c48783a8b46c3ae6.jpg",
+      "reading": "观察脚本如何从翻新演示过渡到优惠说明；优惠条件须来自本次输入。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "640e3f6023e7624ca9d1e5e3fc189496e4396dc6f8ef742b3da02d65009d7a45"
+    }
+  },
+  "ecommerce-scene-seeding": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-场景种草-20260909/完整脚本-拼合.md",
+      "sha256": "24ae82b2397b6b108677867a23d730dc1e4f150391dc56203cdca1f894b7a65e",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜建立晨间出门情境与妆前防护痛点 → 镜头4｜11-15s｜走向明朗阳光并给出行动分享"
+    },
+    "caseStudy": {
+      "id": "5c357fb9-1b15-4316-aecc-788f8e96f16a",
+      "title": "食品含片｜暧昧场景带货",
+      "thumb": "/commerce/discovery/media/73a4354ed9cea6af7e89655028d317a5231d3e7a465c6f9b13c24838611fbf53.jpg",
+      "reading": "卧室的固定生活情境先于产品动作，人物、商品与音频各有引用。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T04:52:50.034Z",
+      "snapshotHash": "63a67d742eca94695457528569076538bb45a21dbfc5dccea129cfc2c2f4b0b8"
+    }
+  },
+  "ecommerce-pain-point-solution": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-痛点解决-20260909/完整脚本-拼合.md",
+      "sha256": "e10f61fde06c9b312e95d1e9762e1ccd75dc71917453024a092ef40363f32e36",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜截停痛点 → 镜头5｜12-15s｜建议与收尾"
+    },
+    "caseStudy": {
+      "id": "d07c589f-d085-4bd5-a202-53a2b99027cd",
+      "title": "服装｜原创｜痛点场景",
+      "thumb": "/commerce/discovery/media/6e1069c7f3ce84422c8867720f818a227ae4387bc6616cde78bebb534eb2b49d.jpg",
+      "reading": "人物、衣物正背面、帽子和标识分配独立参考，先有人在具体地点遇到的问题。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T04:52:50.034Z",
+      "snapshotHash": "e953870cceb11369ea45ee14aaecd58a21a1de8b293f6fcb293f2b211ca52764"
+    }
+  },
+  "ecommerce-function-demo": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-功能演示-20260909/完整脚本-拼合.md",
+      "sha256": "b1ebb0b223c6b26a0d950e562015d9f6867d098d18263a2f1dba76c1255d5d94",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜截停：呈现成膜干爽质感反差 → 镜头5｜12-15s｜确认：英雄镜头定格与安心行动理由"
+    },
+    "caseStudy": {
+      "id": "cd0df171-869e-4458-bf7d-c21e607889e2",
+      "title": "Tiktok视频生成",
+      "thumb": "/commerce/discovery/media/37397b82117af08c3ed9094c6ed262d0f43cd53b72c888e9c48783a8b46c3ae6.jpg",
+      "reading": "从同一物件的翻新前后提取可见变化，再回查中间的操作。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "640e3f6023e7624ca9d1e5e3fc189496e4396dc6f8ef742b3da02d65009d7a45"
+    }
+  },
+  "local-store-discovery": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-门店发现-20260909/完整脚本-拼合.md",
+      "sha256": "1e63567f0daa2bff728a42cf4096ede7e23c97f471178c978adc31001f059200",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜街区切入与引发好奇 → 镜头5｜12-15s｜精准推荐与行动引导"
+    },
+    "caseStudy": {
+      "id": "7b830a89-a954-4a34-aecf-ff06cfcdbc81",
+      "title": "同城美食探店",
+      "thumb": "/commerce/discovery/media/7b28238e047cf2c0696f7a57e8c8c74af1b9aee6e7a336d7688ea9e9fc249bc7.jpg",
+      "reading": "菜品、门店、出镜人物分别有图；先建立地点，再用实际菜品给出到店理由。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "c7664fedca32de429c391a4ab8982b77a2b97334cbca0cb2c6ffed8ee2b31cd0"
+    }
+  },
+  "local-store-visit-record": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-到店实录-20260909/完整脚本-拼合.md",
+      "sha256": "881e549454c724da630e2534a6eb608de6dcb9f34093213b83db40bca39622ba",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜交代痛点起因并完成到店抵达 → 镜头5｜12-15s｜离店给出决策判断与适合人群建议"
+    },
+    "caseStudy": {
+      "id": "7b830a89-a954-4a34-aecf-ff06cfcdbc81",
+      "title": "同城美食探店",
+      "thumb": "/commerce/discovery/media/7b28238e047cf2c0696f7a57e8c8c74af1b9aee6e7a336d7688ea9e9fc249bc7.jpg",
+      "reading": "按外观、入店与体验重建动线，区分达人描述与镜头可见证据。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "c7664fedca32de429c391a4ab8982b77a2b97334cbca0cb2c6ffed8ee2b31cd0"
+    }
+  },
+  "local-store-signature-experience": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-招牌体验-20260909/完整脚本-拼合.md",
+      "sha256": "64024420b8ae3edc85cdf1fb8b265b8b4ca45abd21bc3f154c909d16c51bf0e7",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜到店截停与专属接待 → 镜头5｜13-15s｜适宜建议与到店行动"
+    },
+    "caseStudy": {
+      "id": "7b830a89-a954-4a34-aecf-ff06cfcdbc81",
+      "title": "同城美食探店",
+      "thumb": "/commerce/discovery/media/7b28238e047cf2c0696f7a57e8c8c74af1b9aee6e7a336d7688ea9e9fc249bc7.jpg",
+      "reading": "把菜品近景与门店环境分开，围绕一道菜的具体体验安排镜头。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "c7664fedca32de429c391a4ab8982b77a2b97334cbca0cb2c6ffed8ee2b31cd0"
+    }
+  },
+  "local-store-group-buy-conversion": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-同城团购-20260909/完整脚本-拼合.md",
+      "sha256": "c5902ad71980fd7be2570d27a2078dc4ac908d06950cecfde4fc823f9b3fb3bb",
+      "observed": "历史同名卡脚本。镜头1｜0-4s｜截停目标人群并建立到店动机 → 镜头4｜12-15s｜清晰说明预约核销规则并引导行动"
+    },
+    "caseStudy": {
+      "id": "7b830a89-a954-4a34-aecf-ff06cfcdbc81",
+      "title": "同城美食探店",
+      "thumb": "/commerce/discovery/media/7b28238e047cf2c0696f7a57e8c8c74af1b9aee6e7a336d7688ea9e9fc249bc7.jpg",
+      "reading": "相同素材中区分门店动线、套餐菜品和权益说明，素材画面不能替代核销规则。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "c7664fedca32de429c391a4ab8982b77a2b97334cbca0cb2c6ffed8ee2b31cd0"
+    }
+  },
+  "face-slap-reversal": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "caseStudy": {
+      "id": "dc685d99-6472-480f-865c-f05a3ecf6dad",
+      "title": "红木家具（情绪留人）",
+      "thumb": "/commerce/discovery/media/cdc2dd36e94fdb9f0ddd008a96771e8e01040190a38c4bdaa157444d0889baf5.jpg",
+      "reading": "家庭偏见产生冲突，后段切入家具展厅和精雕细节；可据此测试误判、证据和反应。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "15cfa91b0ecea7089c740412ed15102c5a03ac8c67b36c2a4e7a049fa1689c25"
+    }
+  },
+  "advertising-brand-proposition": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "caseStudy": {
+      "id": "397c0215-7b66-4262-b787-b4526a0b054d",
+      "title": "服装TVC｜原创 教程",
+      "thumb": "/commerce/discovery/media/552df691e7af3a4248aaa4dbd2e5f90b6ae4920b1217346878543ab47fbf3e67.jpg",
+      "reading": "雪景环境、模特和服装建立统一外观，换景继续核对服装细节。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "d3b2590e48ddc3d94d1bd46450186cd716af177d58778d77406a5459e6b5f467"
+    }
+  },
+  "advertising-brand-story": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "caseStudy": {
+      "id": "8376e4d6-823a-411e-a1d2-d24e0235a172",
+      "title": "日用品｜风扇 卖点可视化",
+      "thumb": "/commerce/discovery/media/ed7949c50508df20d3ac2c79c57c581496281ff6c418b5a4445047aa346c1f66.png",
+      "reading": "风扇卖点可视化案例含四个画布节点，适用于逐节点检查卖点和展示动作。",
+      "kind": "canvas",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "d77b4dcd09e3f65eb14ef8c1eb5f5535fa501a383745d7127240e91267503909"
+    }
+  },
+  "advertising-lifestyle": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "caseStudy": {
+      "id": "57ce1e77-bfff-41f5-b26b-4d2e80c646cb",
+      "title": "牙膏-创意视频",
+      "thumb": "/commerce/discovery/media/c28dddc8ff4f0493dd693f734057d1887df6d779caea73ceaf91770b1e82edce.jpg",
+      "reading": "动画拟人、现实镜面和声音提示分工，以同一主题串联视觉变化。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "95ac6646b1ca50a75692ccf1641335145e739423fc17080d09fd88bc61b09466"
+    }
+  },
+  "advertising-creative-concept": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-创意概念-20260909/完整脚本-拼合.md",
+      "sha256": "80e10e89edea07105af3f465a11a31b0f258069b005f919e94e9f80cdb685935",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜建立烈日侵袭与空间压迫的视觉谜题 → 镜头5｜12-15s｜回环首镜规则并落定品牌高光价值"
+    },
+    "caseStudy": {
+      "id": "33444987-0f31-4507-9507-92747031f2de",
+      "title": "人物冲出屏幕",
+      "thumb": "/commerce/discovery/media/cafd5dd9b9911bd4e093bd4d4df3bda0cade81bf28f4fa8db107afb6cd273a1c.jpg",
+      "reading": "第一人称桌面与屏幕内的画面形成两个空间，固定视角帮助观众理解视觉规则。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "e470139af0ec987a1073b6a3b38afed1b38871acc8f0601019008aedbd4ba9b7"
+    }
+  },
+  "short-drama-dialogue": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-对话短剧-20260909/完整脚本-拼合.md",
+      "sha256": "ce46f54c2b55ed06c486f226235ce1192a3abe76ce68f835b6b3d8ec5cabfdba",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜交锋切入：推门质问与焦虑施压 → 镜头4｜11-15s｜余味达成：留客到店与体验闭环"
+    },
+    "caseStudy": {
+      "id": "dc685d99-6472-480f-865c-f05a3ecf6dad",
+      "title": "红木家具（情绪留人）",
+      "thumb": "/commerce/discovery/media/cdc2dd36e94fdb9f0ddd008a96771e8e01040190a38c4bdaa157444d0889baf5.jpg",
+      "reading": "家庭冲突引出展厅场景，观察角色立场和镜头焦点的转移。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "15cfa91b0ecea7089c740412ed15102c5a03ac8c67b36c2a4e7a049fa1689c25"
+    }
+  },
+  "short-drama-reversal": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-反转短剧-20260909/完整脚本-拼合.md",
+      "sha256": "65e125a2d23a25a1444008f2d2c2eae0ce55c8d4619a6c5ee92e9e5fc29b9e34",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜建立误读情境与到店动线 → 镜头4｜11-15s｜反转收尾与到店行动强化"
+    },
+    "caseStudy": {
+      "id": "edc16a57-229f-4d51-836c-6820615613d9",
+      "title": "大码服饰（信息密度）",
+      "thumb": "/commerce/discovery/media/4db2aa6f492af869fcdc96eda8a5862f447f11be547ac68e36b8408b7c877cc6.jpg",
+      "reading": "以街头情境与穿搭反差组织前后信息，比较铺垫镜与重释镜。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "7efa6555a973743421260ef77e9d915047f71a4c933345708e0bc58e6f9a1eb8"
+    }
+  },
+  "short-drama-suspense": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-悬念短剧-20260909/完整脚本-拼合.md",
+      "sha256": "61de277b81f6f0fe2eaed19d384fc1e24e532d3518d996306e4bd8d2eead798c",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜异常抛出：烈日无伞的从容反差 → 镜头5｜12-15s｜余波定局：午后落座与到店指引"
+    },
+    "caseStudy": {
+      "id": "aa991319-b079-4804-8f38-e2297e35591b",
+      "title": "茵缇玛-私护",
+      "thumb": "/commerce/discovery/media/0c4faaa3ba3219586dbdd2cc7f9408b7ff95d6b146bebaad356071cabcf50951.jpg",
+      "reading": "脚本含悬念与揭晓，对照揭晓前的线索和素材角色。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T04:52:50.034Z",
+      "snapshotHash": "84aee2b370e5b6a75da56de6b038b80206d478331d2c4abb806a4889b9e70eb8"
+    }
+  },
+  "short-drama-emotional": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-情绪短片-20260909/完整脚本-拼合.md",
+      "sha256": "7e82de6295b2228254771366fc9057373e0d124444219aa887447a07cda6e2fe",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜建立初态与紧绷防御 → 镜头4｜11-15s｜从容入光与余味收束"
+    },
+    "caseStudy": {
+      "id": "dc685d99-6472-480f-865c-f05a3ecf6dad",
+      "title": "红木家具（情绪留人）",
+      "thumb": "/commerce/discovery/media/cdc2dd36e94fdb9f0ddd008a96771e8e01040190a38c4bdaa157444d0889baf5.jpg",
+      "reading": "开场人物的偏见与后段体验形成情绪变化，商品细节用作承接。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T03:59:16.302Z",
+      "snapshotHash": "15cfa91b0ecea7089c740412ed15102c5a03ac8c67b36c2a4e7a049fa1689c25"
+    }
+  },
+  "short-drama-product-placement": {
+    "guide": [
+      "直击产品核心痛点",
+      "利用新奇场景开场",
+      "制造强烈情绪反转",
+      "用反常识观点开场",
+      "真实痛点引出需求",
+      "强烈对比突出差异"
+    ],
+    "welcome": "你想创作一条什么视频？",
+    "sample": {
+      "file": "差分反推-产品植入-20260909/完整脚本-拼合.md",
+      "sha256": "b2787c397f7c68118554b20f29b76502990dadda8ba29a8adc9722be41648fb6",
+      "observed": "历史同名卡脚本。镜头1｜0-3s｜呈现阻碍与到店犹豫 → 镜头4｜11-15s｜沉浸体验与行动收束"
+    },
+    "caseStudy": {
+      "id": "5c357fb9-1b15-4316-aecc-788f8e96f16a",
+      "title": "食品含片｜暧昧场景带货",
+      "thumb": "/commerce/discovery/media/73a4354ed9cea6af7e89655028d317a5231d3e7a465c6f9b13c24838611fbf53.jpg",
+      "reading": "在同一卧室情境内给人物和产品分配参考，保持情节中的使用动机。",
+      "kind": "video",
+      "capturedAt": "2026-09-08T04:52:50.034Z",
+      "snapshotHash": "63a67d742eca94695457528569076538bb45a21dbfc5dccea129cfc2c2f4b0b8"
+    }
+  },
+  "character-face-turnaround": {
+    "guide": [
+      "上传清晰人脸图，可补充角色气质、表情或写实程度。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能试飞-脸部三视图-20260910/生成结果-三视图.png",
+      "sha256": "332d3c5dbd108bea6a54b887f952c3676e36232257e01ce48f95dee4a727e76f",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "character-fullbody-sheet": {
+    "guide": [
+      "上传包含脸部和身形的人物图，可补充穿搭与人物气质。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/character-fullbody-sheet.png",
+      "sha256": "d4dc28f07001d21bc426ba8a0a1579d370a83b2d802d159e6e2502f78d2f0e3c",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "change-face": {
+    "guide": [
+      "可补充表情、妆容、发型细节等要求，例如：自然微笑、淡妆、保留刘海。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/change-face.png",
+      "sha256": "810f8d4d9ae2b1763981199f38df08731780230e60021ebaee11662bbc90a93f",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "dual-face-fusion": {
+    "guide": [
+      "可补充融合比例、年龄感、气质、表情等要求，例如：更偏向图1、约 25 岁、清冷感、自然微笑。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/dual-face-fusion.png",
+      "sha256": "7080a27d7cff10e30fa259f426f8d92ad98c49ed6f4ba592b82ec4f2d9bddf16",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "change-cloth": {
+    "guide": [
+      "可补充模特姿势、动作、穿搭效果、场景氛围等，例如：自然站立、双手插兜、衣服更宽松一些。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/change-cloth.png",
+      "sha256": "3769366772325d3fb95d84a9e3972ae362b29ebf34383af7d317d95952e3ad0b",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "model-product-try-on": {
+    "guide": [
+      "上传产品与人物参考图，可补充使用动作、场景和构图。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/model-product-try-on.png",
+      "sha256": "ff61d0a5d4bc69f91074b8ec60ead5386ae73a0cb62da6d4e48a62cd317e608b",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "product-white-background": {
+    "guide": [
+      "可补充拍摄角度、和需要保留的细节等"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标-白底图输出.png",
+      "sha256": "762f8f5331486771f1d5f33b9bf3812174a9f69c37d45275631783c13ec20dc2",
+      "observed": "同输入白底卫衣 A/B：对标平铺保留帽、拉链及抽绳，本站旧样折叠遮住部分细节。"
+    }
+  },
+  "element-replace": {
+    "guide": [
+      "可补充面料描述，印花位置等描述"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/element-replace.png",
+      "sha256": "afda7af6e23f14667aa7ea91f4a20e031c0e106445d6012172f97abfc752f760",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "script-storyboard": {
+    "guide": [
+      "连接图片和脚本卡，补充时长、平台、卖点和视觉要求。"
+    ],
+    "welcome": ""
+  },
+  "storyboard-element-replace": {
+    "guide": [
+      "上传参考分镜和替换素材，可补充需要替换的人物、产品或背景。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/storyboard-element-replace.png",
+      "sha256": "eb4071f20a671c948c1107208f77f821a67d6ffc32a6dbb52b5b2e93d73deb94",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "video-reference-first-frame": {
+    "guide": [
+      "上传参考图，可补充动作起点、运动方向、主体和画幅要求。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/video-reference-first-frame.png",
+      "sha256": "fca6371f48ab30af745699baa4b9480dc693dad705d5343f299d42e08177acc8",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "background-change": {
+    "guide": [
+      "可补充人物姿势，位置等描述"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/background-change.png",
+      "sha256": "c8497d22e9c33c652d1430622f09f6e29ee5c17dc433caa9f98ed43d72cd3887",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "portrait-realism-enhance": {
+    "guide": [
+      "上传待优化的人像，可说明需要加强的脸部、手部、发丝或光影。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/portrait-realism-enhance.png",
+      "sha256": "bfca1483ad92d03d14830882f1c1c814557906fc64cbacc9c657c00635a57657",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "product-consistency-reference": {
+    "guide": [
+      "上传产品主图或细节图，可补充需要保留的颜色、包装、logo 和比例。"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/product-consistency-reference.png",
+      "sha256": "5733b4f31bfa90e882d7d9d9fd4bf1e27843ec55e3a3037e788d15e35caafbd7",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  },
+  "product-refine": {
+    "guide": [
+      "可补充精修图片的要求，比如瘦脸、美颜等"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能试飞-图片精修-20260910/精修状态.json",
+      "sha256": "f83282cada9cd8676df9fdf6f4135b85cf2090b4303bff99bab52c435788de91",
+      "observed": "历史会员任务记录标记完成，有新图片返回；未做同输入画质评分。"
+    }
+  },
+  "default": {
+    "guide": [
+      "输入对图片的生成和修改的描述"
+    ],
+    "welcome": "",
+    "sample": {
+      "file": "图片技能差分-20260911/对标A侧/default.png",
+      "sha256": "f2236ccbb05edbab15d1b1cab6752f85f137554be5c89b56e8f2ba027b8b38a8",
+      "observed": "历史留存的对标侧结果图，可用于同输入人工比图。"
+    }
+  }
+}

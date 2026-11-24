@@ -67,6 +67,11 @@ async function main() {
     result = await submitted(grok, { prompt: "Unchanged Grok", duration: 3, imageUrl: images[0], resolutionTier: "1080p" }); assert.equal(result.request.url, "https://fixture.invalid/openai/v1/videos"); assert.equal(result.request.body!.seconds, 3); checks += 2;
     const ss25 = { ...base, protocol_type: "secure_skill_seedance_video", model_name: "seedance-2.5", api_protocol_config: { min_duration: 4, max_duration: 30 } };
     result = await submitted(ss25, { prompt: "Unchanged SS25", duration: 8, imageUrl: images[0], resolutionTier: "720p" }); assert.equal(result.request.body!.seconds, 8); assert.equal(result.request.body!.duration, undefined); checks += 2;
+    const fullHd = { ...ss25, api_protocol_config: { ...ss25.api_protocol_config, resolution_options: ["480p", "720p", "1080p"] } };
+    result = await submitted(fullHd, { prompt: "Group-specific Full HD", duration: 4, resolutionTier: "1080p" });
+    assert.equal(result.request.body!.resolution, "1080p"); checks++;
+    await blocked(ss25, { duration: 4, resolutionTier: "1080p" });
+    await blocked(fullHd, { duration: 4, resolutionTier: "4k" });
     await blocked({ ...ss25, model_name: "seedance2.0" }, { duration: 8 });
     console.log(JSON.stringify({ passed: true, checks, mockedRequests: requests.length, providerCalls: 0, realNetworkRequests: 0, automaticSubmissionRetries: 0, officialDocs: "https://token.secure-skill.com/docs#muse-video" }));
   } finally { globalThis.fetch = saved; }

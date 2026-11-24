@@ -1,3 +1,4 @@
+import {commerceUnitRate} from './main-site-model-pricing';
 import {createHash,randomUUID} from 'node:crypto';
 import {get,put,list,transaction,claim} from './store';
 import {job} from './jobs';
@@ -8,7 +9,7 @@ import {validateImageInput} from '../image-input-contract';
 import {parseAgentPlan,type AgentPlanSpec} from './agent-plan-schema';
 import {compileAgentPlan,verifyPlanAssetBytes,type PlanPreview,type PlanStepBillingSnapshot} from './agent-plan-compiler';
 import {createWorkflowInTransaction,validateGraph,type Workflow} from './workflows';
-import {billingQuantity,quoteCost,quotePrice} from './billing';
+import {billingQuantity,fixedQuoteUnit,quoteCost,quotePrice} from './billing';
 import {chargeAggregateQuoteAtConfirm,refundAggregateQuoteBeforeDispatch} from './billing';
 import {assertPublishedCommercePaidJobsReady,currentPublishedCommerceConfiguration,primePublishedCommerceConfiguration,stableJson} from './configuration-platform';
 import {requireCommerceModelAcceptance} from './model-acceptance';
@@ -119,7 +120,7 @@ async function prepareCompilation(owner:string,id:string,input:ConfirmationInput
   const compiled=compileAgentPlan(owner,id,source,spec,bindings);validateGraph(compiled.nodes,compiled.edges);
   for(const [index,step] of compiled.preview.steps.entries()){
     const model=selected[index],settings=spec.steps[index];
-    Object.assign(step,{...(settings.kind==='video'?{modelId:model.id}:{}),modelLabel:model.displayName,referencePrice:quotePrice({kind:settings.kind,duration:settings.duration},model),aspectRatio:settings.aspectRatio,resolution:settings.resolution,...(settings.duration?{duration:settings.duration}:{})});
+    Object.assign(step,{...(settings.kind==='video'?{modelId:model.id}:{}),modelLabel:model.displayName,referencePrice:quotePrice({kind:settings.kind,duration:settings.duration,resolution:settings.resolution},model),aspectRatio:settings.aspectRatio,resolution:settings.resolution,...(settings.duration?{duration:settings.duration}:{})});
   }
   compiled.preview.fingerprint=createHash('sha256').update(JSON.stringify({compiled:compiled.preview.fingerprint,models:selected.map(({secret:_,...m})=>m)})).digest('hex');
   return {plan,source,spec,bindings,selected,compiled};
@@ -134,11 +135,11 @@ async function quoteSteps(value:Awaited<ReturnType<typeof prepareCompilation>>):
     const route=resolveOperation({kind:step.kind,skillId:step.skillId,...(step.kind==='video'?{modelId:model.id}:{})});
     if(route.modelId!==model.id)throw Error(`${step.label}：模型路由已变化，请重新预览`);
     const quantity=billingQuantity({kind:step.kind,duration:step.duration},model);
-    const estimatedTotalCost=quoteCost({kind:step.kind,duration:step.duration},model);
-    const payableTotal=quotePrice({kind:step.kind,duration:step.duration},model);
+    const estimatedTotalCost=quoteCost({kind:step.kind,duration:step.duration,resolution:step.resolution},model);
+    const payableTotal=quotePrice({kind:step.kind,duration:step.duration,resolution:step.resolution},model);
     if(payableTotal<estimatedTotalCost)throw Error(`${step.label}：模型售价低于成本，已停止报价`);
     if(payableTotal===0&&model.capabilities.explicitlyFree!==true)throw Error(`${step.label}：0 元模型未显式标记免费，已停止报价`);
-    return {stepId:step.id,label:step.label,kind:step.kind,operationId:route.id,modelId:model.id,modelDisplayName:model.displayName,modelConfigHash:model.configHash,billingUnit:model.billingUnit,quantity,unitCost:Number(model.costPrice),estimatedTotalCost,unitPrice:Number(model.publicPrice),payableTotal};
+    return {stepId:step.id,label:step.label,kind:step.kind,operationId:route.id,modelId:model.id,modelDisplayName:model.displayName,modelConfigHash:model.configHash,billingUnit:fixedQuoteUnit(model),quantity,unitCost:commerceUnitRate(step,model,'cost'),estimatedTotalCost,unitPrice:commerceUnitRate(step,model,'sale'),payableTotal};
   }));
 }
 

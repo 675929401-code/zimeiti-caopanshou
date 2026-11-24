@@ -23,7 +23,7 @@ const ADVANCING_GET = new Set([
 ]);
 const normalizeLabel = value => String(value || '').replace(/\s+/gu, '');
 const SECONDARY_REDIRECTS = new Map([
-  ['/commerce/settings', '/admin'],
+  ['/commerce/settings', '/commerce'],
   ['/tools/chat', '/tools/text/text-chat'],
   ['/tools/text/formal-script', '/tools/text/general-script'],
   ['/voice-studio', '/voice-studio/workspace'],

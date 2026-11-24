@@ -9,6 +9,7 @@ import { secureSkillKlingBody } from "./video-secure-skill-kling";
 import { isSecureSkillNativeVideoModel, secureSkillNativeVideoBody, secureSkillWan3Media } from "./video-secure-skill-native";
 import { doubaoSeedanceTaskBody, isDoubaoSeedanceModel } from "./video-doubao-seedance-relay";
 import { parseVideoTokenUsage, type VideoTokenUsage } from "./video-token-billing";
+import { toApisVideoBody, TOAPIS_VIDEO_ENDPOINT } from "./toapis-video-contract";
 import { submitVolcDigitalHuman, pollVolcDigitalHuman } from './volcengine-digital-human';
 import { submitVideoRetalk } from './digital-human-provider';
 import { videoProviderFetch as fetch, withVideoProviderRequestAudit, type VideoProviderRequestReceipt } from "./video-provider-request-audit";
@@ -114,6 +115,8 @@ export interface VideoGenerateParams {
   lastFrameUrl?: string;
   /** 参考图URL（风格参考，优先级低于首帧图） */
   referenceImageUrl?: string;
+  /** Internal acknowledgement window for Commerce native multimodal submissions. */
+  commerceReferenceSubmission?: boolean;
   /** 源视频URL（视频编辑模型如omni_flash_abra_edit需要） */
   sourceVideoUrl?: string;
   /** Explicitly preserve the full audio by extending VideoRetalk source frames. */
@@ -312,6 +315,7 @@ export interface ApiProtocolConfig {
   max_reference_audios?: number;
   /** 是否支持参考音频。 */
   supports_audio_input?: boolean;
+  supports_source_video_input?: boolean;
   /** false 时禁止系统在用户未上传图片时偷偷生成参考图。 */
   auto_generate_reference?: boolean;
   /** true 时仅接受 duration_options 中的原生时长，不做向上取整后裁切。 */
@@ -2155,10 +2159,11 @@ async function generateGaoruiVideo(config: VideoModelConfig, params: VideoGenera
   }
   if (isGaoruiSeedanceNativeModel(modelName)) {
     const body = gaoruiSeedanceNativeBody(config, params);
+    const acknowledgementTimeout = params.commerceReferenceSubmission && params.sourceVideoUrl ? 150_000 : 15_000;
     const acknowledgement = await videoSubmitOnce(submitUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${config.api_key}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify(body), signal: AbortSignal.timeout(acknowledgementTimeout),
     });
     if (!acknowledgement) return videoSubmissionUnknown();
     const { resp, data } = acknowledgement;
@@ -4412,7 +4417,42 @@ async function pollDashscopeWanS2v(
 }
 
 /** The submission handlers are also the public catalog's protocol authority. */
+function toApisResult(config: VideoModelConfig, taskId: string, data: Record<string, unknown>): VideoTaskResult {
+  const status = String(data.status || '');
+  if (data.id !== taskId || data.model !== config.model_name) return { taskId, status: 'processing', error: 'ToAPIs 回执身份尚未核实' };
+  if (status === 'failed' || status === 'cancelled') return { taskId, status: 'failed', error: String(extractByPath(data, 'error.message') || 'ToAPIs 任务失败').slice(0, 300) };
+  if (status === 'completed') {
+    const url = extractByPath(data, 'result.data.0.url');
+    if (typeof url === 'string' && url.startsWith('https://')) return { taskId, status: 'success', videoUrl: url, usage: parseVideoTokenUsage(data) };
+  }
+  return { taskId, status: status === 'queued' ? 'queued' : 'processing', progress: extractVideoTaskProgress(data) };
+}
+
+async function generateToApisVideo(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
+  const key = secureSkillProviderRequestKey(params);
+  const body = toApisVideoBody(config, params, key);
+  const response = await videoSubmitOnce(TOAPIS_VIDEO_ENDPOINT, {
+    method: 'POST', headers: {Authorization: 'Bearer ' + config.api_key, 'Content-Type': 'application/json'},
+    body: JSON.stringify(body), signal: AbortSignal.timeout(45_000),
+  });
+  const receipt = secureSkillSubmissionReceipt(TOAPIS_VIDEO_ENDPOINT, key, response || undefined);
+  if (!response) return videoSubmissionUnknown(receipt);
+  const id = videoSubmissionTaskId(response.data.id);
+  if (!response.resp.ok || !id) return videoSubmissionWithoutTask(response.resp, response.data, 'ToAPIs', receipt);
+  return toApisResult(config, id, response.data);
+}
+
+async function pollToApisVideo(config: VideoModelConfig, taskId: string): Promise<VideoTaskResult> {
+  if (config.api_endpoint !== TOAPIS_VIDEO_ENDPOINT) throw Error('ToAPIs 查询地址与配置不符');
+  const response = await fetch(TOAPIS_VIDEO_ENDPOINT + '/' + encodeURIComponent(taskId), {
+    headers: {Authorization: 'Bearer ' + config.api_key}, signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) return {taskId, status:'processing', error: 'ToAPIs 查询返回 HTTP ' + response.status};
+  return toApisResult(config, taskId, await safeParseJson(response));
+}
+
 const VIDEO_PROTOCOL_SUBMITTERS: Record<string, (config: VideoModelConfig, params: VideoGenerateParams) => Promise<VideoTaskResult>> = {
+  toapis_video: generateToApisVideo,
   siliconflow_kling: generateSiliconFlowKling,
   siliconflow_vidu: generateSiliconFlowVidu,
   runway: generateRunway,
@@ -4460,7 +4500,7 @@ async function submitVideoTaskWithProtocol(config: VideoModelConfig, params: Vid
   // 全协议统一兜底：
   // 当用户只上传“参考图”而没有上传“首帧”时，如果该模型支持图片输入，
   // 则把参考图提升为真正的图片输入，避免部分协议忽略 referenceImageUrl 导致上游实际拿不到图。
-  if (config.protocol_type !== "secure_skill_seedance_video"
+  if (config.protocol_type !== "secure_skill_seedance_video" && config.protocol_type !== "toapis_video"
     && !(config.protocol_type === "gaorui_video" && (isGaoruiSeedanceNativeModel(config.model_name) || isGaoruiH3NativeModel(config.model_name) || isGaoruiGrokNativeModel(config.model_name)))
     && !normalizedParams.imageUrl && normalizedParams.referenceImageUrl && config.supports_image_input) {
     normalizedParams = {
@@ -4497,6 +4537,8 @@ export async function pollVideoTask(config: VideoModelConfig, taskId: string, co
 
 async function pollVideoTaskWithProtocol(config: VideoModelConfig, taskId: string, contentUrl?: string): Promise<VideoTaskResult> {
   switch (config.protocol_type) {
+    case "toapis_video":
+      return pollToApisVideo(config, taskId);
     case "siliconflow_kling":
       return pollSiliconFlowKling(config, taskId);
     case "siliconflow_vidu":

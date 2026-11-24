@@ -310,7 +310,7 @@ async function main(args = process.argv.slice(2)) {
   if (runDirectors) {
     const assetId = await ensureImageAsset();
     const directors = (await jsonRequest("/api/commerce/v1/director-catalog")).payload.directors || [];
-    assert.equal(directors.length, 19, "NINETEEN_PUBLISHED_DIRECTORS_REQUIRED");
+    assert.equal(directors.length, 28, "TWENTY_EIGHT_PUBLISHED_DIRECTORS_REQUIRED");
     let consecutiveFailures = 0;
     for (const card of directors.slice(0, maxDirectors)) {
       try {
@@ -341,7 +341,7 @@ async function main(args = process.argv.slice(2)) {
   await persist();
   console.log(JSON.stringify({ evidence: outputDir, configuration: report.configuration, totals: report.totals, result: report.result }, null, 2));
 
-  if (runDirectors) assert.equal(report.result.directorsPassed, Math.min(maxDirectors, 19), "DIRECTOR_LIVE_DELIVERY_INCOMPLETE");
+  if (runDirectors) assert.equal(report.result.directorsPassed, Math.min(maxDirectors, 28), "DIRECTOR_LIVE_DELIVERY_INCOMPLETE");
 }
 
 main().catch((error) => {

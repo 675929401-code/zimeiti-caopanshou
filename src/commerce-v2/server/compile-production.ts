@@ -14,7 +14,7 @@ export async function compileCommerceV2Production(owner: string, rawDraft: unkno
   const draft = canonicalizeProductionMaterials(owner, parseProductionDraft(rawDraft));
   if (!draft.modelId) throw new Error("请选择模型后再核对生产计划");
   const director = draft.director
-    ? commerceV2DirectorDefinition(draft.director.skillKey, draft.director.registryVersion, draft.director.promptVersion)
+    ? await commerceV2DirectorDefinition(draft.director.skillKey, draft.director.registryVersion, draft.director.promptVersion)
     : null;
   const model = (await commerceV2Models(draft.kind)).find((item) => item.id === draft.modelId);
   if (!model) throw new Error("模型已移除或不属于当前生产类型");
