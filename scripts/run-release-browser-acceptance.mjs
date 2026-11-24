@@ -114,6 +114,7 @@ const BENIGN_READ_ONLY_API_ABORT_PATHS = new Set([
   "/api/native-operations/v2/channels/platforms",
   "/api/native-operations/studio/bootstrap",
   "/api/native-operations/studio/history",
+  "/api/commerce/v1/discover/home",
 ]);
 const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/admin|/admin/extraction-reconciliation",
@@ -1191,9 +1192,11 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         const benignNavigationKey = `${resolveBenignNavigationSourceRoute(route)}|${pathname}`;
         const utilityIdentity = route === "/tools/utility" && pagePhase === "checking" && error === "net::ERR_ABORTED"
           ? reviewedUtilityRscIdentity(request, target.baseUrl) : null;
-        const benignReadOnlyApiAbort = sameOrigin && item.method === "GET" && resourceType === "fetch"
+        const benignReadOnlyApiAbort = sameOrigin && item.method === "GET"
           && error === "net::ERR_ABORTED" && !nextRouterPrefetch
-          && (BENIGN_READ_ONLY_API_ABORT_PATHS.has(pathname) || pathname.startsWith("/api/native-operations/"));
+          && ((resourceType === "fetch"
+            && (BENIGN_READ_ONLY_API_ABORT_PATHS.has(pathname) || pathname.startsWith("/api/native-operations/")))
+            || resourceType === "media");
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
           && nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
           benignNavigationAborts.push(item);
@@ -1225,6 +1228,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           sameOrigin,
           url: cleanUrl(response.url()),
         };
+        // A step-up-required read (428) is the reviewed locked state for the
+        // operations patrol panel, not a candidate failure.
+        if (sameOrigin && response.status() === 428 && pathname === "/api/admin/ops/patrol") {
+          nonBlockingHttpErrors.push(item);
+          return;
+        }
         // Every same-origin HTTP failure is release-blocking, including images,
         // fonts, media, and non-API fetches. This keeps the URL-less Chromium
         // console duplicate filter above safe because the response listener
