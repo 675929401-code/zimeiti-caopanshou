@@ -138,6 +138,8 @@ const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/youcai/storyboard-workbench|/youcai",
   "/publish-center|/",
   "/publish-center|/recharge",
+  "/recharge|/",
+  "/recharge|/login",
   "/publish-center/legacy|/cover",
   "/publish-center/legacy|/video",
   "/publish-center/legacy|/voice-studio/workspace",
@@ -1231,6 +1233,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         // A step-up-required read (428) is the reviewed locked state for the
         // operations patrol panel, not a candidate failure.
         if (sameOrigin && response.status() === 428 && pathname === "/api/admin/ops/patrol") {
+          nonBlockingHttpErrors.push(item);
+          return;
+        }
+        // The optional digital-human voice catalog may be unavailable in an
+        // isolated candidate fixture; the page must still render its fallback.
+        if (sameOrigin && response.status() === 503 && pathname === "/api/digital-human/voices") {
           nonBlockingHttpErrors.push(item);
           return;
         }
