@@ -1497,7 +1497,7 @@ for (const tool of ["segment", "text"]) {
   await assert.rejects(reviewedRouteHelpers.verifyReviewedTool(reviewedToolPage(tool, { lostInput: true }), tool), /BROWSER_TOOL_INPUT_INVALID/u);
 }
 await assert.rejects(reviewedRouteHelpers.verifyReviewedTool({}, "unreviewed"), /BROWSER_TOOL_CONTRACT_INVALID/u);
-assert.match(browserAcceptanceRunner, /"\/admin": Object\.freeze\(\{ service: "web", expectedRoute: "\/admin\?tab=dashboard&view=overview" \}\)/u,
+assert.match(browserAcceptanceRunner, /"\/admin": Object\.freeze\(\{ service: "web", expectedRoute: "\/admin\?tab=dashboard" \}\)/u,
   "browser acceptance must validate the admin shell against its reviewed default view");
 assert.match(browserAcceptanceRunner, /"\/workspace": Object\.freeze\(\{[\s\S]*service: "voice"[\s\S]*navigationRoute: "\/voice-platform\/workspace"[\s\S]*expectedRoute: "\/voice-platform\/workspace"/u,
   "browser acceptance must open the Voice workspace on the Voice candidate rather than the Web candidate");
