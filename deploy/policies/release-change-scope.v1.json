@@ -29,8 +29,17 @@
   },
   "browserAcceptance": {
     "minimumDistinctRoutes": 3,
-    "defaultRoutes": ["/", "/tools", "/video"],
-    "retiredPageRoutes": ["/image-workbench", "/tools/image/image-chat", "/youcai/image-workbench", "/youcai/tools/image/image-chat"],
+    "defaultRoutes": [
+      "/",
+      "/tools",
+      "/video"
+    ],
+    "retiredPageRoutes": [
+      "/image-workbench",
+      "/tools/image/image-chat",
+      "/youcai/image-workbench",
+      "/youcai/tools/image/image-chat"
+    ],
     "blockedUnlessPolicyMappedPatterns": [
       "^supabase/",
       "^src/app/api/",
@@ -62,18 +71,36 @@
       },
       {
         "id": "video-surface",
-        "patterns": ["^(?:src/app/video/|src/app/api/video/|src/lib/video)"],
-        "routes": ["/video", "/media-history", "/storyboard-workbench"]
+        "patterns": [
+          "^(?:src/app/video/|src/app/api/video/|src/lib/video)"
+        ],
+        "routes": [
+          "/video",
+          "/media-history",
+          "/storyboard-workbench"
+        ]
       },
       {
         "id": "admin-surface",
-        "patterns": ["^(?:src/app/admin/|src/app/api/admin/|src/lib/auth|src/lib/.*permission)"],
-        "routes": ["/admin", "/", "/tools"]
+        "patterns": [
+          "^(?:src/app/admin/|src/app/api/admin/|src/lib/auth|src/lib/.*permission)"
+        ],
+        "routes": [
+          "/admin",
+          "/",
+          "/tools"
+        ]
       },
       {
         "id": "voice-surface",
-        "patterns": ["^(?:voice-platform/|src/app/voice/|src/app/api/voice/)"],
-        "routes": ["/voice-studio/workspace", "/", "/tools"]
+        "patterns": [
+          "^(?:voice-platform/|src/app/voice/|src/app/api/voice/)"
+        ],
+        "routes": [
+          "/voice-studio/workspace",
+          "/",
+          "/tools"
+        ]
       },
       {
         "id": "platform-wide-shared-surface",
@@ -104,42 +131,106 @@
           "^src/app/robots\\.ts$",
           "^src/app/image-workbench/(?:error|loading)\\.tsx$"
         ],
-        "routes": ["/", "/tools", "/video"]
+        "routes": [
+          "/",
+          "/tools",
+          "/video"
+        ]
       },
       {
         "id": "tools-page-header-surface",
-        "patterns": ["^src/app/tools/tools-page-header\\.tsx$"],
-        "routes": ["/tools", "/tools/utility"]
+        "patterns": [
+          "^src/app/tools/tools-page-header\\.tsx$"
+        ],
+        "routes": [
+          "/tools",
+          "/tools/utility"
+        ]
       },
       {
         "id": "voice-studio-layout-surface",
-        "patterns": ["^src/app/voice-studio/layout\\.tsx$"],
-        "routes": ["/voice-studio/workspace", "/voice-studio/imitate", "/voice-studio/voices"]
+        "patterns": [
+          "^src/app/voice-studio/layout\\.tsx$"
+        ],
+        "routes": [
+          "/voice-studio/workspace",
+          "/voice-studio/imitate",
+          "/voice-studio/voices"
+        ]
       },
       {
         "id": "cover-exact-error-boundary",
-        "patterns": ["^src/app/cover/error\\.tsx$"],
-        "routes": ["/cover"]
+        "patterns": [
+          "^src/app/cover/error\\.tsx$"
+        ],
+        "routes": [
+          "/cover"
+        ]
       },
       {
         "id": "help-exact-client-surface",
-        "patterns": ["^src/app/help/help-center-client\\.tsx$"],
-        "routes": ["/help"]
+        "patterns": [
+          "^src/app/help/help-center-client\\.tsx$"
+        ],
+        "routes": [
+          "/help"
+        ]
       },
       {
         "id": "storyboard-exact-persistent-layout",
-        "patterns": ["^src/app/storyboard-workbench/layout\\.tsx$"],
-        "routes": ["/storyboard-workbench", "/storyboard-workbench/history", "/storyboard-workbench/visual-assets"]
+        "patterns": [
+          "^src/app/storyboard-workbench/layout\\.tsx$"
+        ],
+        "routes": [
+          "/storyboard-workbench",
+          "/storyboard-workbench/history",
+          "/storyboard-workbench/visual-assets"
+        ]
       },
       {
         "id": "youcai-exact-isolated-storyboard-layouts",
-        "patterns": ["^src/app/youcai/(?:layout\\.tsx|storyboard-workbench/layout\\.tsx)$"],
-        "routes": ["/youcai/storyboard-workbench", "/commerce/rebuild"]
+        "patterns": [
+          "^src/app/youcai/(?:layout\\.tsx|storyboard-workbench/layout\\.tsx)$"
+        ],
+        "routes": [
+          "/youcai/storyboard-workbench",
+          "/commerce/rebuild"
+        ]
       },
       {
         "id": "release-control-plane",
-        "patterns": ["^(?:deploy/|\\.github/workflows/|scripts/(?:classify-release-change-scope|release-change-validation-gate|compute-release-build-output-digest|package-standalone-artifact))", "^\\.engineering/project-profile\\.v1\\.json$"],
-        "routes": ["/", "/tools", "/video"]
+        "patterns": [
+          "^(?:deploy/|\\.github/workflows/|scripts/(?:classify-release-change-scope|release-change-validation-gate|compute-release-build-output-digest|package-standalone-artifact))",
+          "^\\.engineering/project-profile\\.v1\\.json$"
+        ],
+        "routes": [
+          "/",
+          "/tools",
+          "/video"
+        ]
+      },
+      {
+        "id": "commerce-v2-surface",
+        "patterns": [
+          "^src/commerce-v2/",
+          "^src/app/commerce/"
+        ],
+        "routes": [
+          "/commerce",
+          "/commerce/rebuild",
+          "/commerce/manage"
+        ]
+      },
+      {
+        "id": "repo-top-level-files",
+        "patterns": [
+          "^(?:\\.dockerignore|Dockerfile|pnpm-workspace\\.yaml)$"
+        ],
+        "routes": [
+          "/",
+          "/tools",
+          "/video"
+        ]
       }
     ]
   },
@@ -204,7 +295,9 @@
       ],
       "command": {
         "executable": "node",
-        "args": ["{path}"]
+        "args": [
+          "{path}"
+        ]
       }
     },
     {
@@ -214,7 +307,11 @@
       ],
       "command": {
         "executable": "pnpm",
-        "args": ["exec", "tsx", "{path}"]
+        "args": [
+          "exec",
+          "tsx",
+          "{path}"
+        ]
       }
     },
     {
@@ -224,7 +321,9 @@
       ],
       "command": {
         "executable": "node",
-        "args": ["scripts/verify-video-live-history-ui-only-zero-network.mjs"]
+        "args": [
+          "scripts/verify-video-live-history-ui-only-zero-network.mjs"
+        ]
       }
     }
   ],
