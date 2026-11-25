@@ -200,7 +200,9 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(ciWorkflow, /CONTROLLED_BASE_SHA: \$\{\{ vars\.RELEASE_BASE_SHA \}\}/u);
   assert.match(ciWorkflow, /CONTROLLED_ROUTES: \$\{\{ vars\.RELEASE_ACCEPTANCE_ROUTES_JSON \}\}/u);
   assert.doesNotMatch(ciWorkflow, /github\.event\.before/u);
-  assert.match(ciWorkflow, /if \[\[ "\$EVENT_NAME" == push \]\]; then\s+REQUESTED_BASE_SHA="\$CONTROLLED_BASE_SHA"\s+REQUESTED_ROUTES="\$CONTROLLED_ROUTES"/u);
+  assert.match(ciWorkflow, /if \[\[ "\$EVENT_NAME" == push \]\]; then\s+REQUESTED_BASE_SHA="\$CONTROLLED_BASE_SHA"\s+requested=all/u);
+  assert.doesNotMatch(ciWorkflow, /REQUESTED_ROUTES="\$CONTROLLED_ROUTES"/u,
+    "push builds must derive acceptance routes from policy, not a static caller list");
   assert.match(ciWorkflow, /\[\[ "\$REQUESTED_BASE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.doesNotMatch(ciWorkflow, /^\s+tags:/mu, "tags must not be a release entrypoint");
   assert.match(ciWorkflow, /git merge-base --is-ancestor "\$base_sha" "\$head_sha"/u, "manual release base must be a real ancestor");
@@ -678,7 +680,7 @@ const codeTrackManifest = read("deploy/manifests/public-code-track.v1.txt")
   .split(/\r?\n/u)
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#"));
-assert.equal(codeTrackManifest.length, 171, "public code-track manifest count drifted");
+assert.equal(codeTrackManifest.length, 174, "public code-track manifest count drifted");
 assert.equal(new Set(codeTrackManifest).size, codeTrackManifest.length, "public code-track manifest contains duplicates");
 function assertGitPathNotIgnored(relativePath, label) {
   const result = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "--", relativePath], {

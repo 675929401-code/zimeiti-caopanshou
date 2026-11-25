@@ -108,8 +108,10 @@ jobs:
             [[ "$phase" == candidate || "$phase" == finalize ]]
             if [[ "$EVENT_NAME" == push ]]; then
               REQUESTED_BASE_SHA="$CONTROLLED_BASE_SHA"
-              REQUESTED_ROUTES="$CONTROLLED_ROUTES"
               requested=all
+              # Push builds derive the reviewed route set from policy. Explicit
+              # routes are only for manual dispatch, where the caller must pass
+              # the exact policy-derived set.
               [[ -n "$CONTROLLED_ROUTES" ]] || { echo 'RELEASE_ACCEPTANCE_ROUTES_JSON is required' >&2; exit 2; }
             fi
             [[ "$REQUESTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'release base must be a complete SHA' >&2; exit 2; }
