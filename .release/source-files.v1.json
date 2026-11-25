@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "99312204fb59d921f62e5627cd868bc1aa8bbb17a9ffa9c356dd05ff1d3b92a0",
-  "sourceFingerprint": "9193f5bd5fa238dde0833b4b29eb8e5b146000fedbffc774a1ae62781b825c80",
+  "sourceFingerprint": "c2e75874852e36e05752f7ac7a689bf20eb777bf5e0f23ad4520ff745c0e8788",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5601,
-  "totalBytes": 113835277,
+  "totalBytes": 113835275,
   "files": [
     {
       "path": ".cnb.yml",
@@ -598,8 +598,8 @@
     },
     {
       "path": "docs/上线后逐页审计-20261125.md",
-      "bytes": 3575,
-      "sha256": "fb3f145731ef16d7eaf5fddddd7720caf7565d5d38289f4b9341e5d2a6130fc0"
+      "bytes": 3573,
+      "sha256": "4b4707dbb292f725c918a418e18786021d82ea3814920b86cc32c694f3585160"
     },
     {
       "path": "docs/主站二级功能扩展排查与本地修复-2026-09-02.md",
