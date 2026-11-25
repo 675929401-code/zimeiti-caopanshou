@@ -678,7 +678,7 @@ const codeTrackManifest = read("deploy/manifests/public-code-track.v1.txt")
   .split(/\r?\n/u)
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#"));
-assert.equal(codeTrackManifest.length, 171, "public code-track manifest count drifted");
+assert.equal(codeTrackManifest.length, 173, "public code-track manifest count drifted");
 assert.equal(new Set(codeTrackManifest).size, codeTrackManifest.length, "public code-track manifest contains duplicates");
 function assertGitPathNotIgnored(relativePath, label) {
   const result = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "--", relativePath], {

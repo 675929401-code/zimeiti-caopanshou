@@ -110,6 +110,7 @@ commerce/reference/da1d5ce76c34c3b6.jpg
 commerce/reference/dcd9bffa5a3d7b6c.jpg
 commerce/reference/de0685208ba51a26.png
 commerce/reference/de1c9f31b3d66e68.png
+commerce/reference/director-custom.png
 commerce/reference/e160dffc79895d52.jpg
 commerce/reference/e8bc4ce001e3de1f.png
 commerce/reference/e95bf0aa13236d0d.png
@@ -149,6 +150,7 @@ commerce/tutorial-3.mp4
 commerce/tutorial-4.mp4
 commerce/video-creation-example.mp4
 commerce/video-icon.png
+favicon.ico
 model-brands/bytedance-v2.svg
 model-brands/bytedance.svg
 model-brands/generic.svg
