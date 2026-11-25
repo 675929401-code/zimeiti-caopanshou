@@ -217,8 +217,7 @@
         ],
         "routes": [
           "/commerce",
-          "/commerce/rebuild",
-          "/commerce/manage"
+          "/commerce/rebuild"
         ]
       },
       {

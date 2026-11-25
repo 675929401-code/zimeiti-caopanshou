@@ -3,13 +3,13 @@
   "projectId": "zimeiti-caopanshou",
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
-  "policySha256": "f124dabe55a6b8f5f6b1a4c95abe11b49097ce474f44248d3374d7382b0ef9a7",
-  "sourceFingerprint": "7fca4f651fe4d67ea2dbcf9dbb3fa95341ae4c64d2d042662ac8bfa851d44b66",
+  "policySha256": "99312204fb59d921f62e5627cd868bc1aa8bbb17a9ffa9c356dd05ff1d3b92a0",
+  "sourceFingerprint": "9193f5bd5fa238dde0833b4b29eb8e5b146000fedbffc774a1ae62781b825c80",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 5597,
-  "totalBytes": 113036769,
+  "fileCount": 5601,
+  "totalBytes": 113835277,
   "files": [
     {
       "path": ".cnb.yml",
@@ -73,13 +73,13 @@
     },
     {
       "path": ".github/workflows/release-vnext.yml",
-      "bytes": 25949,
-      "sha256": "58f8fc2744309ff3541d07079bfe11a21105a56a498d573092015b907e03035d"
+      "bytes": 26103,
+      "sha256": "3850178cbea5ee2250e08bcf0d5e5f32790f75a638f7c33b0a329c9606b9d79c"
     },
     {
       "path": ".gitignore",
-      "bytes": 5634,
-      "sha256": "e5ffdfb190076c5e4413aa61569bd2f6a26b3501f24fede037958f326c541ed2"
+      "bytes": 5777,
+      "sha256": "3fb95d9375b34551fa9e7c11ab580342479738403f8591010462a407e3ba876c"
     },
     {
       "path": ".releaseignore",
@@ -158,8 +158,8 @@
     },
     {
       "path": "deploy/manifests/public-code-track.v1.txt",
-      "bytes": 7912,
-      "sha256": "ca3e962b9004cf532244d0a13f2a9da0023560d486841ff61cad99b18218efd0"
+      "bytes": 7997,
+      "sha256": "5be79e7e6312cb4b9dad44b229d255838b7e3a414bebe64b7faf6bc1f1a0314e"
     },
     {
       "path": "deploy/manifests/release-candidate-plan.v1.json",
@@ -218,13 +218,13 @@
     },
     {
       "path": "deploy/policies/release-change-scope.v1.json",
-      "bytes": 14959,
-      "sha256": "bfe32280b7b9c124cc3750a3d31c0767d313280a8f68630d72f6c3ecdb8bd072"
+      "bytes": 16154,
+      "sha256": "b5a8901bcc3ccce2d4bd4e98fa93a4dc343fab492ccbb05faa2e3b951816b78d"
     },
     {
       "path": "deploy/policies/release-policy.json",
-      "bytes": 47819,
-      "sha256": "f124dabe55a6b8f5f6b1a4c95abe11b49097ce474f44248d3374d7382b0ef9a7"
+      "bytes": 48085,
+      "sha256": "99312204fb59d921f62e5627cd868bc1aa8bbb17a9ffa9c356dd05ff1d3b92a0"
     },
     {
       "path": "deploy/rollback/20261109010000_publish_center_membership_and_execution.sql",
@@ -595,6 +595,11 @@
       "path": "docs/上线前审计与部署清单-20261124.md",
       "bytes": 3993,
       "sha256": "69cd9643962e9ca6a04bd511115c6c1abc0f9cf0291cd25552c89043b2d86b6e"
+    },
+    {
+      "path": "docs/上线后逐页审计-20261125.md",
+      "bytes": 3575,
+      "sha256": "fb3f145731ef16d7eaf5fddddd7720caf7565d5d38289f4b9341e5d2a6130fc0"
     },
     {
       "path": "docs/主站二级功能扩展排查与本地修复-2026-09-02.md",
@@ -1792,6 +1797,11 @@
       "sha256": "10679c42a0dc761f6d9e89805895375a148f0550c47d56b7b3af604cf385003b"
     },
     {
+      "path": "public/commerce/guides/member-guide.docx",
+      "bytes": 326951,
+      "sha256": "2cac4903b6e2bce5d25ce6143a91dadf24f4e695529bc9db4d281bc08b7c627d"
+    },
+    {
       "path": "public/commerce/home-drive.webp",
       "bytes": 110898,
       "sha256": "d9dde2afaf8f89848021885d21b7b0f789b209fdb93e31d11f966353f12376a9"
@@ -2187,6 +2197,11 @@
       "sha256": "de1c9f31b3d66e688d3e1c16e2f6aab7b891806a8ce760db55d1e3e81925a28f"
     },
     {
+      "path": "public/commerce/reference/director-custom.png",
+      "bytes": 458038,
+      "sha256": "2228106c10f7dba9a3f606a90cf670a6477fe7509e3a36bc4535615937c9ea4d"
+    },
+    {
       "path": "public/commerce/reference/e160dffc79895d52.jpg",
       "bytes": 12489,
       "sha256": "e160dffc79895d5297589e1922dfe412e1a8592b988fd3f948cc38d90192b704"
@@ -2380,6 +2395,11 @@
       "path": "public/commerce/video-icon.png",
       "bytes": 18294,
       "sha256": "c1f1f59b2071644df2c3d1595b430f1cbe3d2d6f982dcfe26992596206acfce7"
+    },
+    {
+      "path": "public/favicon.ico",
+      "bytes": 7961,
+      "sha256": "53a6b055364d32d22255de440345e2b60586e4534b698a6faacbfbbf977ac1ca"
     },
     {
       "path": "public/model-brands/bytedance-v2.svg",
@@ -10648,8 +10668,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 134639,
-      "sha256": "bd9e723291f7bdee96a54182973dec0fc0aa52e50b0aca18798f7b8497022078"
+      "bytes": 134779,
+      "sha256": "e16263cc40104efccead85d52911bc86e39ebb62657331cd843d0d7ef2fa5469"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

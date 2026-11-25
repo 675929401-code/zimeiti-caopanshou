@@ -31,6 +31,7 @@ commerce/director-role-upload.png
 commerce/drama.jpg
 commerce/ecommerce.jpg
 commerce/feishu-mark.png
+commerce/guides/member-guide.docx
 commerce/home-drive.webp
 commerce/home-spotlight.jpg
 commerce/home-tools/canvas.svg

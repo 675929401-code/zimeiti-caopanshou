@@ -299,3 +299,9 @@ Desktop.ini
 .next*/
 # Timestamped or named source backups are local evidence, not release inputs.
 *.bak-*
+
+# Release favicon is a reviewed public asset.
+!public/favicon.ico
+
+# Reviewed commerce guide asset.
+!public/commerce/guides/member-guide.docx
